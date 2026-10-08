@@ -1,95 +1,51 @@
-# 📋 Especificación del Proyecto: Card Statement Insights (3-Month Trend Analyzer)
+# 📋 Especificación del Proyecto: Card Statement Insights (1-to-3+ Statements Progressive Analyzer)
 
-**Objetivo:** Construir en **1 semana (formato Hackathon)** un analizador inteligente de estados de cuenta de tarjeta de crédito que reciba **3 meses consecutivos (PDF/CSV)**, construya un dashboard interactivo de tendencias trimestrales y proponga recortes concretos y cuantificados para gastar menos el próximo mes.
-
----
-
-## 1. Alcance del MVP (Qué entra y qué NO entra en 1 semana)
-
-### ✅ In-Scope (Lo que sí construiremos)
-1. **Carga Multi-Archivo (3 Estados de Cuenta):** Dropzone para subir 3 archivos PDF o CSV correspondientes a los últimos 3 meses (más un botón de *"Probar con 3 Estados de Cuenta Demo"* para evaluación instantánea).
-2. **Parser Universal Basado en IA + Redacción de Privacidad:**
-   - Extracción automática de transacciones (`fecha`, `comercio_original`, `comercio_limpio`, `categoria`, `monto`, `es_recurrente`, `es_msi`) usando capacidades multimodales de LLM sobre el texto/PDF sin depender de expresiones regulares frágiles por banco.
-   - Ofuscación automática de números de tarjeta y datos sensibles antes de guardar en sesión.
-3. **Motor de Tendencias de 3 Meses (3-Month Trend Engine):**
-   - **Velocidad por Categoría (MoM Growth):** Qué categorías subieron consistentemente del Mes 1 al Mes 2 y al Mes 3 (*Creeping Categories*).
-   - **Radar de Suscripciones y "Suscripciones Silenciosas":** Cargos que se repiten cada mes en la misma fecha o que subieron de precio en el Mes 3.
-   - **Índice de Gasto Hormiga & Frecuencia por Comercio:** Comercios pequeños (< $15 USD) pero con alta frecuencia mensual (cafeterías, apps de transporte, tiendas de conveniencia).
-   - **Peso de Meses Sin Intereses (MSI):** Qué porcentaje del pago mensual ya está comprometido en cuotas fijas vs. compras nuevas.
-4. **Generador de Sugerencias Accionables ("Tu Plan para Gastar Menos"):**
-   - Tarjetas de recomendación que citan los comercios reales del usuario y calculan el **Ahorro Potencial Mensual y Anual** si aplica el ajuste.
-
-### ❌ Out-of-Scope (Para evitar retrasos en la semana)
-- Conexión bancaria directa vía credenciales bancarias (Open Banking en vivo suele requerir aprobaciones largas; el PDF/CSV funciona con cualquier banco desde el día 1).
-- Almacenamiento permanente en la nube de los PDFs originales (todo se procesa en memoria o `localStorage`/SQLite efímero por privacidad).
+**Objetivo:** Construir en **1 semana (formato Hackathon)** un dashboard de análisis de tarjetas de crédito sumamente visual que **funcione desde el primer estado de cuenta (1 PDF/CSV)** entregando valor inmediato, y que **recomiende e incentive subir mínimo 3 estados de cuenta** para desbloquear la detección de tendencias (*trends*) multi-mes.
 
 ---
 
-## 2. Arquitectura Técnica Recomendada
+## 1. Experiencia Progresiva: De 1 Estado de Cuenta a 3+ Estados de Cuenta
+
+Para maximizar la conversión y facilidad de uso, la aplicación nunca bloquea al usuario si solo tiene 1 archivo a la mano:
+
+| Cantidad de Archivos Subidos | Modo del Dashboard | Qué ve el usuario (Outputs) | Call-to-Action Progresivo |
+| :--- | :--- | :--- | :--- |
+| **1 Estado de Cuenta** | **Modo Radiografía (Snapshot 1M)** | • Distribución por categoría (Donut Chart)<br>• Top 5 comercios de mayor gasto<br>• Detector de Gastos Hormiga del mes (frecuencia > 4 visitas)<br>• Identificación de cargos recurrentes/suscripciones y MSI<br>• Top 3 recomendaciones rápidas de ahorro para el próximo corte. | Indicador visual `1/3 meses cargados`: *"💡 Consejo: Sube 2 estados de cuenta anteriores para activar el **Radar de Tendencias Trimestrales** y descubrir qué gastos están creciendo mes a mes."* |
+| **2 Estados de Cuenta** | **Modo Comparativo (Mes vs. Mes)** | • Todo lo anterior + Variación porcentual Mes 1 vs. Mes 2 ($\Delta\%$). | Indicador `2/3 meses cargados`: *"¡Casi listo! Agrega 1 estado de cuenta más para confirmar tendencias reales (mínimo 3 meses) y descartar picos aislados."* |
+| **3+ Estados de Cuenta (Óptimo)** | **Modo Tendencias Completo (3-Month Trend Engine)** | • **Gráfica de Evolución 3M por Categoría**<br>• **Alerta de *Lifestyle Creep*** (categorías que subieron 2 meses seguidos)<br>• **Detector de Inflación en Suscripciones** (cargos recurrentes que subieron de precio)<br>• **Plan de Ahorro con Simulador Interactivo** basado en el promedio y tendencia trimestral. | Badge verde: *"✅ Análisis de Tendencias Trimestrales Activo (3/3 meses)"*. |
+
+---
+
+## 2. Arquitectura Técnica y Rol de `gemini-3.8-flash` + `gemma-4-e2b`
 
 ```mermaid
 flowchart LR
-    A["📄 3 PDFs / CSVs (Mes 1, 2 y 3)"] --> B["🔒 Extractor & Normalizador (Gemini Flash Structured JSON)"]
-    B --> C["📊 Motor Analítico 3M (Cálculo de Deltas, Suscripciones y Frecuencia)"]
-    C --> D["📈 Dashboard Interactivo (Tendencias, Categorías, Comercios)"]
-    C --> E["💡 AI Savings Advisor (3-5 Acciones Cuantificadas)"]
+    A["📄 1 a 3+ PDFs / CSVs"] --> B["🛡️ Redacción PII & Limpieza Local (gemma-4-e2b)"]
+    B --> C["⚡ Extracción & Categorización Estructurada (gemini-3.8-flash)"]
+    C --> D{"¿Cuántos meses hay?"}
+    D -->|1 Mes| E["📊 Dashboard Snapshot 1M + Banner 'Sube 3 para Trends'"]
+    D -->|3+ Meses| F["📈 Dashboard Completo de Tendencias 3M + Simulador de Ahorro"]
 ```
 
-### Esquema JSON de Salida por Transacción y Resumen Trimestral
-```json
-{
-  "statements_summary": [
-    { "month": "2026-07", "total_spent": 18450.00, "transaction_count": 42 },
-    { "month": "2026-08", "total_spent": 21100.00, "transaction_count": 49 },
-    { "month": "2026-09", "total_spent": 24320.00, "transaction_count": 58 }
-  ],
-  "three_month_trends": {
-    "fastest_growing_category": {
-      "category": "Delivery & Restaurantes",
-      "m1": 3200,
-      "m2": 4500,
-      "m3": 6100,
-      "growth_pct": 90.6
-    },
-    "recurring_subscriptions": [
-      { "merchant": "Streaming Plus", "monthly_avg": 299, "status": "Aumentó +$50 en Mes 3" },
-      { "merchant": "Gym Fit", "monthly_avg": 899, "status": "Recurrente fijo" }
-    ],
-    "micro_spend_drains": {
-      "merchant": "Uber Eats / Cafeterías",
-      "total_3m_visits": 34,
-      "avg_ticket": 165,
-      "total_3m_amount": 5610
-    }
-  },
-  "savings_recommendations": [
-    {
-      "title": "Tope semanal en Delivery (subió 90% en 3 meses)",
-      "evidence": "Pasaste de 8 pedidos en Julio ($3,200) a 17 pedidos en Septiembre ($6,100).",
-      "action": "Limitar pedidos entre semana a máximo 2 por semana (nivel de Julio).",
-      "estimated_monthly_savings": 2900
-    }
-  ]
-}
-```
+### Uso de Modelos
+1. **`gemma-4-e2b` (Privacidad & Normalización Rápida):**
+   - Limpia texto crudo de estados de cuenta eliminando números de cuenta/tarjeta, nombres y domicilios antes de enviarlo al análisis profundo, y normaliza nombres de comercios sucios (`CLIP*TAQUERIA EL PASO 092` → `Taquería El Paso`).
+2. **`gemini-3.8-flash` (Extracción Multimodal + Insights Financieros):**
+   - Convierte las tablas de 1, 2 o 3+ estados de cuenta en un JSON tipado estricto y genera las sugerencias accionables cuantificadas (con ahorro estimado en `$`).
 
 ---
 
-## 3. Plan de Trabajo de 1 Semana (Día a Día)
+## 3. Diseño del Dashboard (Fácil de Consumir)
 
-| Día | Meta Principal | Entregable |
-| :--- | :--- | :--- |
-| **Día 1** | Parser Multimodal de PDFs a JSON + Datos Demo | Endpoint que recibe 3 PDFs de estado de cuenta (o carga 3 PDFs sintéticos realistas) y devuelve el JSON limpio y categorizado. |
-| **Día 2** | Motor de Tendencias de 3 Meses | Lógica determinista que agrupa Mes 1, Mes 2 y Mes 3 por categoría y comercio para detectar crecimientos sostenidos, suscripciones y compras hormiga. |
-| **Día 3** | Dashboard Visual (Gráficas de Tendencia) | Tarjetas KPI (Gasto Total Trimestral, Categoría en Alerta, Total en Suscripciones) + Gráfica de líneas/barras apiladas comparando Mes 1 vs Mes 2 vs Mes 3. |
-| **Día 4** | Generador de Sugerencias y "Simulador de Recorte" | Panel de recomendaciones con switches interactivos: el usuario activa/desactiva sugerencias y ve cuánto bajaría su próximo estado de cuenta en tiempo real. |
-| **Día 5** | Tabla Exploradora de Transacciones y Anomalías | Buscador por comercio, filtro de cargos duplicados o atípicos (*Outliers*), y etiqueta de privacidad ("Tus PDFs no se guardan en ningún servidor"). |
-| **Día 6** | Pulido de UI/UX y Pruebas con Distintos Bancos | Probar extracción con formatos variados (BBVA, Nu, Citibanamex, Santander o CSVs genéricos) y afinar colores/micro-interacciones. |
-| **Día 7** | Demo y Pitch | Flujo en vivo: arrastrar 3 PDFs -> ver en 5 segundos cómo el dashboard revela $3,500/mes de ahorro oculto. |
-
----
-
-## 4. Qué hace ganador a este proyecto en un Hackathon
-1. **Cero Fricción Bancaria:** Nadie quiere dar su contraseña del banco a una app de hackathon, pero todos pueden arrastrar 3 PDFs o probar el set demo en un clic.
-2. **Enfoque en "Tendencia de 3 Meses" (No foto estática):** Ver un solo mes no dice si vas mejor o peor; comparar 3 meses revela el *momentum* del gasto (qué se está saliendo de control antes de que sea tarde).
-3. **Sugerencias con Evidencia Real y Simulador Interactivo:** En lugar de consejos genéricos ("ahorra el 20%"), le dice al usuario exactamente qué comercio o hábito trimestral recortar y cuánto dinero recupera el próximo mes.
+Para evitar tablas saturadas de números, el dashboard se organiza en **4 bloques visuales**:
+1. **Header con Medidor de Profundidad de Análisis (`1/3`, `2/3`, `3/3 Estados de Cuenta`)** + Botones rápidos para cargar *"Demo 1 Mes"* o *"Demo 3 Meses (Tendencias Completas)"*.
+2. **Fila de 4 KPIs Clave:**
+   - 💰 **Gasto Total del Corte (y Promedio 3M si hay 3 meses)**
+   - 📈 **Categoría de Mayor Crecimiento / Mayor Peso**
+   - 🔄 **Drenaje en Suscripciones y Cargos Fijos**
+   - 🐜 **Total en Gastos Hormiga (< $200 MXN / < $12 USD de alta frecuencia)**
+3. **Panel Central de Gráficas:**
+   - Si hay **1 mes**: Gráfica de barras horizontales por categoría + Treemap de comercios.
+   - Si hay **3+ meses**: Gráfica de líneas/barras agrupadas (`Mes 1 vs Mes 2 vs Mes 3`) destacando en rojo las categorías con pendiente positiva sostenida.
+4. **Simulador "Cuánto Puedes Ahorrar el Próximo Mes" (Interactivo):**
+   - Lista de 3 a 5 tarjetas de acción con un *toggle switch* cada una (ej. `[x] Reducir pedidos de Delivery de 16 a 8 al mes -> Ahorras $1,850/mes`). Al activarlas, un contador grande muestra tu **Nuevo Estado de Cuenta Proyectado**.
