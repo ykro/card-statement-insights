@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   CardStatement,
+  CurrencyCode,
   ExpenseCategory,
+  GTQ_PER_USD,
   StatementTransaction,
+  convertExtractedPdfToCardStatement,
   normalizeDirtyMerchantName,
   parseUploadedStatementText,
 } from "@/lib/statementAnalyzer";
+import {
+  extractTokensFromPdfBuffer,
+  parsePdfStatementBuffer,
+} from "@/lib/pdf-statement-parser";
 
 interface UploadedFileInput {
   name: string;
@@ -19,8 +26,10 @@ const VALID_CATEGORIES: ExpenseCategory[] = [
   "Gastos Hormiga y Cafés",
   "Transporte y Combustible",
   "Suscripciones y Servicios",
+  "Viajes y Experiencias",
   "Compras y Cuotas (MSI)",
   "Salud y Farmacia",
+  "Extrafinanciamiento y Cuotas",
 ];
 
 function coerceCategory(raw?: string, merchant?: string): ExpenseCategory {
@@ -33,58 +42,38 @@ function coerceCategory(raw?: string, merchant?: string): ExpenseCategory {
   return "Compras y Cuotas (MSI)";
 }
 
-const EXTRACTION_PROMPT = `Analiza este estado de cuenta de tarjeta de crédito (PDF o texto) y extrae todos los consumos/transacciones reales.
-Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
+const COMPACT_TEXT_EXTRACTION_PROMPT = `Analiza el texto extraído de este estado de cuenta de tarjeta de crédito bimonetario (GTQ y USD) y devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura:
 {
   "monthKey": "YYYY-MM",
   "monthLabel": "Mes YYYY (ej. Septiembre 2026)",
   "shortMonth": "Abreviatura de 3 letras (ej. Sep)",
-  "cardAlias": "Nombre del banco o tarjeta y últimos 4 dígitos (ej. Visa •••• 4821)",
-  "statementPeriod": "Periodo del corte (ej. 15 Ago - 14 Sep)",
-  "currencyDetected": "GTQ o USD",
+  "cardAlias": "Banco y tarjeta con últimos 4 dígitos",
+  "statementPeriod": "Corte DD/MM/YYYY · Pago DD/MM/YYYY",
   "transactions": [
     {
       "date": "YYYY-MM-DD",
-      "rawDescriptor": "Texto original del comercio en el estado de cuenta",
-      "normalizedMerchant": "Nombre limpio y legible del comercio (ej. PedidosYa, Supermercados La Torre, Netflix)",
-      "category": "Una de: Supermercado y Despensa | Delivery y Restaurantes | Gastos Hormiga y Cafés | Transporte y Combustible | Suscripciones y Servicios | Compras y Cuotas (MSI) | Salud y Farmacia",
-      "amountGTQ": 125.50,
+      "rawDescriptor": "Texto original del comercio",
+      "normalizedMerchant": "Nombre limpio del comercio",
+      "category": "Supermercado y Despensa | Delivery y Restaurantes | Gastos Hormiga y Cafés | Transporte y Combustible | Suscripciones y Servicios | Viajes y Experiencias | Compras y Cuotas (MSI) | Salud y Farmacia | Extrafinanciamiento y Cuotas",
+      "originalCurrency": "GTQ o USD",
+      "originalAmount": 125.50,
       "isRecurring": false,
-      "isAntExpense": false
+      "isAntExpense": false,
+      "isExtrafinanciamiento": false
     }
   ]
 }
-Reglas importantes:
-- Si algún monto está en dólares (USD), conviértelo a Quetzales multiplicando por 7.75 en "amountGTQ".
-- Ignora pagos a la tarjeta ("SU PAGO GRACIAS", "ABONO") y extrae únicamente cargos, compras, suscripciones o cuotas.
-- Marca "isRecurring": true en suscripciones mensuales (Netflix, Spotify, iCloud, Claro, Tigo, seguros, membresías).
-- Marca "isAntExpense": true en cafés, tiendas de conveniencia, snacks o compras frecuentes menores a Q95.`;
+Reglas:
+- Conserva la moneda original ("GTQ" o "USD") y el monto exacto en "originalAmount".
+- Ignora pagos a la tarjeta ("GRACIAS POR SU PAGO", "SU PAGO").
+- Marca "isExtrafinanciamiento": true en cargos FIN/CT y FIN/IN.`;
 
-async function callGeminiWithPdfOrText(
-  file: UploadedFileInput,
-  apiKey: string
+async function callGeminiWithCompactText(
+  compactText: string,
+  fileName: string,
+  apiKey: string,
+  indexOffset: number
 ): Promise<CardStatement | null> {
-  const isPdf =
-    file.mimeType === "application/pdf" ||
-    file.name.toLowerCase().endsWith(".pdf");
-
-  const userParts: Record<string, unknown>[] = [{ text: EXTRACTION_PROMPT }];
-
-  if (isPdf) {
-    userParts.push({
-      inlineData: {
-        mimeType: "application/pdf",
-        data: file.base64Data,
-      },
-    });
-  } else {
-    const decodedText = Buffer.from(file.base64Data, "base64").toString("utf-8");
-    userParts.push({
-      text: `Contenido del archivo (${file.name}):\n${decodedText.slice(0, 30000)}`,
-    });
-  }
-
-  // Try models/gemini-3.8-flash first, then fallback to models/gemini-2.5-flash if needed
   const candidateModels = [
     "models/gemini-3.8-flash",
     "models/gemini-2.5-flash",
@@ -98,13 +87,22 @@ async function callGeminiWithPdfOrText(
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [{ parts: userParts }],
+            contents: [
+              {
+                parts: [
+                  { text: COMPACT_TEXT_EXTRACTION_PROMPT },
+                  {
+                    text: `Archivo (${fileName}):\n${compactText.slice(0, 24000)}`,
+                  },
+                ],
+              },
+            ],
             generationConfig: {
               temperature: 0.1,
               responseMimeType: "application/json",
             },
           }),
-          signal: AbortSignal.timeout(25000),
+          signal: AbortSignal.timeout(12000),
         }
       );
 
@@ -132,9 +130,20 @@ async function callGeminiWithPdfOrText(
           const cleanMerchant = String(
             tx.normalizedMerchant || normInfo.normalizedMerchant
           );
-          const amount = Number(tx.amountGTQ ?? tx.amount ?? 0);
+          const origCurr: CurrencyCode =
+            String(tx.originalCurrency || "GTQ").toUpperCase() === "USD"
+              ? "USD"
+              : "GTQ";
+          const origAmt = Math.abs(
+            Number(tx.originalAmount ?? tx.amountGTQ ?? tx.amount ?? 0)
+          );
+          const amountGTQ =
+            origCurr === "USD"
+              ? Number((origAmt * GTQ_PER_USD).toFixed(2))
+              : origAmt;
+
           return {
-            id: `pdf-${Date.now()}-${idx}`,
+            id: `ai-${indexOffset}-${idx}`,
             date: String(tx.date || "2026-09-15"),
             rawDescriptor: rawDesc,
             normalizedMerchant: cleanMerchant,
@@ -142,10 +151,15 @@ async function callGeminiWithPdfOrText(
               typeof tx.category === "string" ? tx.category : undefined,
               cleanMerchant
             ),
-            amountGTQ: isNaN(amount) ? 0 : Math.abs(amount),
+            originalCurrency: origCurr,
+            originalAmount: origAmt,
+            amountGTQ: isNaN(amountGTQ) ? 0 : amountGTQ,
             isRecurring: Boolean(tx.isRecurring ?? normInfo.isRecurring),
             isAntExpense: Boolean(
-              tx.isAntExpense ?? (normInfo.isAntExpense || amount <= 90)
+              tx.isAntExpense ?? (normInfo.isAntExpense || amountGTQ <= 85)
+            ),
+            isExtrafinanciamiento: Boolean(
+              tx.isExtrafinanciamiento ?? normInfo.isExtrafinanciamiento
             ),
           };
         })
@@ -154,14 +168,14 @@ async function callGeminiWithPdfOrText(
       if (transactions.length === 0) continue;
 
       return {
-        id: `stmt-pdf-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        id: `stmt-ai-${Date.now()}-${indexOffset}`,
         monthKey: String(parsed.monthKey || "2026-09"),
         monthLabel: String(
-          parsed.monthLabel || file.name.replace(/\.[^.]+$/, "")
+          parsed.monthLabel || fileName.replace(/\.[^.]+$/, "")
         ),
-        shortMonth: String(parsed.shortMonth || "Mes").slice(0, 4),
+        shortMonth: String(parsed.shortMonth || "Sep").slice(0, 4),
         cardAlias: String(parsed.cardAlias || "Tarjeta Analizada"),
-        statementPeriod: String(parsed.statementPeriod || file.name),
+        statementPeriod: String(parsed.statementPeriod || fileName),
         transactions,
       };
     } catch {
@@ -188,24 +202,69 @@ export async function POST(req: NextRequest) {
     }
 
     const statements: CardStatement[] = [];
+    const diagnostics: {
+      fileName: string;
+      parseDurationMs: number;
+      gtqCount: number;
+      usdCount: number;
+      extrafCount: number;
+    }[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      const slotIndex = (body.existingCount ?? 0) + i;
+      const rawBuffer = Buffer.from(file.base64Data, "base64");
+      const isPdf =
+        file.mimeType === "application/pdf" ||
+        file.name.toLowerCase().endsWith(".pdf") ||
+        rawBuffer.subarray(0, 5).toString("latin1") === "%PDF-";
+
       let extracted: CardStatement | null = null;
 
-      if (apiKey) {
-        extracted = await callGeminiWithPdfOrText(file, apiKey);
+      // 1. Fast (< 20ms) native PDF stream decompression & bimonetary parser
+      if (isPdf) {
+        const pdfResult = parsePdfStatementBuffer(rawBuffer, file.name);
+        if (pdfResult.isPdfParsed) {
+          extracted = convertExtractedPdfToCardStatement(pdfResult, slotIndex);
+          diagnostics.push({
+            fileName: file.name,
+            parseDurationMs: pdfResult.parseDurationMs,
+            gtqCount: pdfResult.regularTransactionsGtq.length,
+            usdCount: pdfResult.regularTransactionsUsd.length,
+            extrafCount: pdfResult.extrafinanciamientoTransactions.length,
+          });
+        } else if (apiKey) {
+          // If PDF has text tokens in a different bank format, pass compact text tokens (~3 KB) to Gemini
+          const tokens = extractTokensFromPdfBuffer(rawBuffer);
+          const compactText = tokens.map((t) => t.text).join(" | ");
+          if (compactText.length > 40) {
+            extracted = await callGeminiWithCompactText(
+              compactText,
+              file.name,
+              apiKey,
+              slotIndex
+            );
+          }
+        }
+      } else if (apiKey) {
+        // Plain text or CSV with optional Gemini enrichment
+        const decodedText = rawBuffer.toString("utf-8");
+        extracted = await callGeminiWithCompactText(
+          decodedText,
+          file.name,
+          apiKey,
+          slotIndex
+        );
       }
 
+      // 2. Deterministic fallback for CSV / TXT / PDF buffer
       if (!extracted) {
-        // Fallback deterministic parser if text/CSV or if PDF contains readable text strings
-        const rawText = Buffer.from(file.base64Data, "base64").toString(
-          "utf-8"
-        );
+        const rawText = rawBuffer.toString("utf-8");
         extracted = parseUploadedStatementText(
           rawText,
           file.name,
-          (body.existingCount ?? 0) + i
+          slotIndex,
+          rawBuffer
         );
       }
 
@@ -215,6 +274,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       statements,
+      diagnostics,
     });
   } catch (error) {
     return NextResponse.json(
