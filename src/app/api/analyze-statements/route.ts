@@ -1,176 +1,229 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  redactPiiAndNormalizeText,
+  CardStatement,
+  ExpenseCategory,
+  StatementTransaction,
   normalizeDirtyMerchantName,
+  parseUploadedStatementText,
 } from "@/lib/statementAnalyzer";
 
-interface AnalyzeRequestPayload {
-  statementCount: number;
-  rawTextSample?: string;
-  merchantsSample?: string[];
-  totalSpendGTQ: number;
-  topCategory: string;
-  hasThreeMonths: boolean;
+interface UploadedFileInput {
+  name: string;
+  mimeType: string;
+  base64Data: string;
+}
+
+const VALID_CATEGORIES: ExpenseCategory[] = [
+  "Supermercado y Despensa",
+  "Delivery y Restaurantes",
+  "Gastos Hormiga y Cafés",
+  "Transporte y Combustible",
+  "Suscripciones y Servicios",
+  "Compras y Cuotas (MSI)",
+  "Salud y Farmacia",
+];
+
+function coerceCategory(raw?: string, merchant?: string): ExpenseCategory {
+  if (raw && VALID_CATEGORIES.includes(raw as ExpenseCategory)) {
+    return raw as ExpenseCategory;
+  }
+  if (merchant) {
+    return normalizeDirtyMerchantName(merchant).category;
+  }
+  return "Compras y Cuotas (MSI)";
+}
+
+const EXTRACTION_PROMPT = `Analiza este estado de cuenta de tarjeta de crédito (PDF o texto) y extrae todos los consumos/transacciones reales.
+Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
+{
+  "monthKey": "YYYY-MM",
+  "monthLabel": "Mes YYYY (ej. Septiembre 2026)",
+  "shortMonth": "Abreviatura de 3 letras (ej. Sep)",
+  "cardAlias": "Nombre del banco o tarjeta y últimos 4 dígitos (ej. Visa •••• 4821)",
+  "statementPeriod": "Periodo del corte (ej. 15 Ago - 14 Sep)",
+  "currencyDetected": "GTQ o USD",
+  "transactions": [
+    {
+      "date": "YYYY-MM-DD",
+      "rawDescriptor": "Texto original del comercio en el estado de cuenta",
+      "normalizedMerchant": "Nombre limpio y legible del comercio (ej. PedidosYa, Supermercados La Torre, Netflix)",
+      "category": "Una de: Supermercado y Despensa | Delivery y Restaurantes | Gastos Hormiga y Cafés | Transporte y Combustible | Suscripciones y Servicios | Compras y Cuotas (MSI) | Salud y Farmacia",
+      "amountGTQ": 125.50,
+      "isRecurring": false,
+      "isAntExpense": false
+    }
+  ]
+}
+Reglas importantes:
+- Si algún monto está en dólares (USD), conviértelo a Quetzales multiplicando por 7.75 en "amountGTQ".
+- Ignora pagos a la tarjeta ("SU PAGO GRACIAS", "ABONO") y extrae únicamente cargos, compras, suscripciones o cuotas.
+- Marca "isRecurring": true en suscripciones mensuales (Netflix, Spotify, iCloud, Claro, Tigo, seguros, membresías).
+- Marca "isAntExpense": true en cafés, tiendas de conveniencia, snacks o compras frecuentes menores a Q95.`;
+
+async function callGeminiWithPdfOrText(
+  file: UploadedFileInput,
+  apiKey: string
+): Promise<CardStatement | null> {
+  const isPdf =
+    file.mimeType === "application/pdf" ||
+    file.name.toLowerCase().endsWith(".pdf");
+
+  const userParts: Record<string, unknown>[] = [{ text: EXTRACTION_PROMPT }];
+
+  if (isPdf) {
+    userParts.push({
+      inlineData: {
+        mimeType: "application/pdf",
+        data: file.base64Data,
+      },
+    });
+  } else {
+    const decodedText = Buffer.from(file.base64Data, "base64").toString("utf-8");
+    userParts.push({
+      text: `Contenido del archivo (${file.name}):\n${decodedText.slice(0, 30000)}`,
+    });
+  }
+
+  // Try models/gemini-3.8-flash first, then fallback to models/gemini-2.5-flash if needed
+  const candidateModels = [
+    "models/gemini-3.8-flash",
+    "models/gemini-2.5-flash",
+  ];
+
+  for (const modelName of candidateModels) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: userParts }],
+            generationConfig: {
+              temperature: 0.1,
+              responseMimeType: "application/json",
+            },
+          }),
+          signal: AbortSignal.timeout(25000),
+        }
+      );
+
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      const rawJson = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawJson) continue;
+
+      const parsed = JSON.parse(rawJson);
+      if (
+        !parsed ||
+        !Array.isArray(parsed.transactions) ||
+        parsed.transactions.length === 0
+      ) {
+        continue;
+      }
+
+      const transactions: StatementTransaction[] = parsed.transactions
+        .map((tx: Record<string, unknown>, idx: number) => {
+          const rawDesc = String(
+            tx.rawDescriptor || tx.normalizedMerchant || "Consumo Tarjeta"
+          );
+          const normInfo = normalizeDirtyMerchantName(rawDesc);
+          const cleanMerchant = String(
+            tx.normalizedMerchant || normInfo.normalizedMerchant
+          );
+          const amount = Number(tx.amountGTQ ?? tx.amount ?? 0);
+          return {
+            id: `pdf-${Date.now()}-${idx}`,
+            date: String(tx.date || "2026-09-15"),
+            rawDescriptor: rawDesc,
+            normalizedMerchant: cleanMerchant,
+            category: coerceCategory(
+              typeof tx.category === "string" ? tx.category : undefined,
+              cleanMerchant
+            ),
+            amountGTQ: isNaN(amount) ? 0 : Math.abs(amount),
+            isRecurring: Boolean(tx.isRecurring ?? normInfo.isRecurring),
+            isAntExpense: Boolean(
+              tx.isAntExpense ?? (normInfo.isAntExpense || amount <= 90)
+            ),
+          };
+        })
+        .filter((tx: StatementTransaction) => tx.amountGTQ > 0);
+
+      if (transactions.length === 0) continue;
+
+      return {
+        id: `stmt-pdf-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        monthKey: String(parsed.monthKey || "2026-09"),
+        monthLabel: String(
+          parsed.monthLabel || file.name.replace(/\.[^.]+$/, "")
+        ),
+        shortMonth: String(parsed.shortMonth || "Mes").slice(0, 4),
+        cardAlias: String(parsed.cardAlias || "Tarjeta Analizada"),
+        statementPeriod: String(parsed.statementPeriod || file.name),
+        transactions,
+      };
+    } catch {
+      // Try next candidate model
+    }
+  }
+
+  return null;
 }
 
 export async function POST(req: NextRequest) {
-  const startTotal = Date.now();
   try {
-    const body = (await req.json()) as AnalyzeRequestPayload;
-    const apiKey = process.env.GEMINI_API_KEY;
+    const body = await req.json();
+    const apiKey = process.env.GEMINI_API_KEY || "";
+    const files: UploadedFileInput[] = Array.isArray(body.files)
+      ? body.files
+      : [];
 
-    const rawInput =
-      body.rawTextSample ||
-      "Titular: Carlos Andrés Morales Armas | Tarjeta Visa: 4532-8910-4421-7782 | NIT: 4829104-K | Dirección: 14 Calle 3-51 Zona 10, Guatemala\nPOS*PEDIDOSYA GUATEMALA 8821 Q540.00\nVISANET*SUPER LA TORRE Z15 GUA Q1,320.00\nBAC*CAFE BARISTA OAKLAND MALL Q88.00\nNETFLIX.COM SUBSCRIPTION PREMIUM Q109.00";
-
-    // Stage 1: Gemma 4 (models/gemma-4-26b-a4b-it) PII Redaction & Merchant Normalization
-    const startGemma = Date.now();
-    const localRedaction = redactPiiAndNormalizeText(rawInput);
-    const sampleDescriptors = body.merchantsSample ?? [
-      "POS*PEDIDOSYA GUATEMALA 8821",
-      "VISANET*SUPER LA TORRE Z15 GUA",
-      "BAC*CAFE BARISTA OAKLAND MALL",
-      "ALMACENES SIMAN MIRAFLORES VC 04/06",
-      "APPLE.COM/BILL ICLOUD+ 200GB",
-    ];
-    const normalizedPairs = sampleDescriptors.map((raw) => {
-      const norm = normalizeDirtyMerchantName(raw);
-      return {
-        raw,
-        normalized: norm.normalizedMerchant,
-        category: norm.category,
-      };
-    });
-
-    let gemmaModelUsed = "models/gemma-4-26b-a4b-it";
-    let gemmaRedactedOutput = localRedaction.redactedText;
-
-    if (apiKey) {
-      try {
-        const gemmaRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemma-4-26b-a4b-it:generateContent?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [
-                {
-                  parts: [
-                    {
-                      text: `Redacta cualquier PII (nombre, tarjeta, NIT, dirección) y normaliza los nombres de comercios en este extracto bancario de Guatemala. Responde en máximo 3 líneas limpias:\n${rawInput}`,
-                    },
-                  ],
-                },
-              ],
-              generationConfig: {
-                temperature: 0.1,
-                maxOutputTokens: 200,
-              },
-            }),
-            signal: AbortSignal.timeout(4500),
-          }
-        );
-
-        if (gemmaRes.ok) {
-          const gemmaJson = await gemmaRes.json();
-          const textOut =
-            gemmaJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (textOut) {
-            gemmaRedactedOutput = textOut.trim();
-          }
-        }
-      } catch {
-        // Fallback to deterministic local Gemma-style redaction
-      }
+    if (files.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: "No se recibieron archivos para analizar." },
+        { status: 400 }
+      );
     }
-    const gemmaLatencyMs = Math.max(42, Date.now() - startGemma);
 
-    // Stage 2: Gemini 3.8 Flash (models/gemini-3.8-flash) Structured Financial Insights
-    const startGemini = Date.now();
-    let geminiModelUsed = "models/gemini-3.8-flash";
-    let executiveSummary =
-      body.statementCount >= 3
-        ? "Análisis trimestral completado (3/3 meses): Se confirma Lifestyle Creep en Delivery y Restaurantes (+78.2% acumulado entre Julio y Septiembre) e inflación silenciosa en 3 suscripciones recurrentes (Netflix, Claro e iCloud+). Activando las 3 medidas recomendadas en el simulador puedes reducir tu próximo corte en Q1,616 (Q19,392 al año)."
-        : body.statementCount === 2
-        ? "Análisis comparativo (2/3 meses): El gasto total subió +11.4% respecto a Agosto, impulsado por PedidosYa y visitas frecuentes a Café Barista. Sube 1 estado de cuenta adicional para confirmar tendencias trimestrales."
-        : "Radiografía mensual completada (1/3 meses): Tu mayor concentración de gasto está en Delivery y Restaurantes (31.0% del corte) y 9 visitas de gastos hormiga (Q745). Sube 2 estados de cuenta anteriores para desbloquear el Motor de Tendencias de 3 Meses.";
+    const statements: CardStatement[] = [];
 
-    let customTip =
-      body.statementCount >= 3
-        ? "Congelar pedidos entre semana en PedidosYa y regresar al plan estándar de Netflix/iCloud recupera Q1,127 mensuales sin afectar tu presupuesto de supermercado en La Torre y Paiz."
-        : "Establecer un tope semanal de Q100 en Café Barista y Super 24 ahorra Q410 en tu próximo estado de cuenta.";
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      let extracted: CardStatement | null = null;
 
-    if (apiKey) {
-      try {
-        const geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [
-                {
-                  parts: [
-                    {
-                      text: `Eres un asesor financiero experto en tarjetas de crédito de Guatemala. Analiza este resumen anonimizado (${body.statementCount}/3 estados de cuenta cargados, gasto corte actual Q${body.totalSpendGTQ}, categoría principal: ${body.topCategory}). Devuelve un JSON con las llaves "executiveSummary" (máximo 260 caracteres en español) y "customTip" (1 recomendación accionable cuantificada en Quetzales).`,
-                    },
-                  ],
-                },
-              ],
-              generationConfig: {
-                temperature: 0.2,
-                maxOutputTokens: 250,
-                responseMimeType: "application/json",
-              },
-            }),
-            signal: AbortSignal.timeout(5000),
-          }
-        );
-
-        if (geminiRes.ok) {
-          const geminiJson = await geminiRes.json();
-          const rawText =
-            geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (rawText) {
-            const parsed = JSON.parse(rawText);
-            if (parsed.executiveSummary) {
-              executiveSummary = parsed.executiveSummary;
-            }
-            if (parsed.customTip) {
-              customTip = parsed.customTip;
-            }
-          }
-        }
-      } catch {
-        // Keep high-precision structured output
+      if (apiKey) {
+        extracted = await callGeminiWithPdfOrText(file, apiKey);
       }
+
+      if (!extracted) {
+        // Fallback deterministic parser if text/CSV or if PDF contains readable text strings
+        const rawText = Buffer.from(file.base64Data, "base64").toString(
+          "utf-8"
+        );
+        extracted = parseUploadedStatementText(
+          rawText,
+          file.name,
+          (body.existingCount ?? 0) + i
+        );
+      }
+
+      statements.push(extracted);
     }
-    const geminiLatencyMs = Math.max(118, Date.now() - startGemini);
 
     return NextResponse.json({
       ok: true,
-      pipeline: {
-        stage1Model: gemmaModelUsed,
-        stage1LatencyMs: gemmaLatencyMs,
-        stage2Model: geminiModelUsed,
-        stage2LatencyMs: geminiLatencyMs,
-        totalLatencyMs: Date.now() - startTotal,
-      },
-      privacyAudit: {
-        redactedText: gemmaRedactedOutput,
-        redactedFieldsCount: localRedaction.redactedCount || 4,
-        normalizedPairs,
-      },
-      insights: {
-        executiveSummary,
-        customTip,
-      },
+      statements,
     });
   } catch (error) {
     return NextResponse.json(
       {
         ok: false,
-        error: error instanceof Error ? error.message : "Analysis error",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Error al interpretar el estado de cuenta.",
       },
       { status: 500 }
     );

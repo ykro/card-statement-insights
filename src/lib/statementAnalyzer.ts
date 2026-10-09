@@ -655,68 +655,57 @@ export function analyzeStatements(
   const savingsPlan: SavingsSimulationItem[] = [
     {
       id: "save-delivery",
-      title:
-        count >= 3
-          ? "Revertir Lifestyle Creep en Delivery y Restaurantes (-40%)"
-          : "Limitar pedidos de PedidosYa y restaurantes a 2 por semana",
+      title: "Reducir pedidos de comida a domicilio (-40%)",
       description:
-        count >= 3
-          ? `Tu gasto en Delivery subió de Q1,420 en Julio a Q2,530 en Septiembre (+78%). Volver a tu nivel base de Julio libera flujo inmediato.`
-          : "Reducir la frecuencia de pedidos a domicilio a la mitad en el próximo corte mensual.",
+        count >= 3 && deliveryCat?.threeMonthGrowthPct
+          ? `Subió +${deliveryCat.threeMonthGrowthPct.toFixed(0)}% en 3 meses (PedidosYa y restaurantes).`
+          : "Limitar pedidos a domicilio a fines de semana.",
       category: "Delivery y Restaurantes",
-      monthlySavingsGTQ: deliveryCutGTQ,
-      annualSavingsGTQ: deliveryCutGTQ * 12,
+      monthlySavingsGTQ: Math.max(120, deliveryCutGTQ),
+      annualSavingsGTQ: Math.max(120, deliveryCutGTQ) * 12,
       difficulty: "Alto Impacto",
       defaultEnabled: true,
       unlockedAtStatements: 1,
-      badgeText:
-        count >= 3
-          ? "Detectado por Tendencia 3M (+78%)"
-          : "Impacto Inmediato 1M",
+      badgeText: count >= 3 ? "Tendencia 3M" : "Impacto alto",
     },
     {
       id: "save-ant",
-      title: "Tope semanal a Gastos Hormiga (Café Barista y Super 24)",
-      description: `Registraste ${antExpensesVisitCount} micro-compras en este corte. Preparar café en casa 3 días por semana reduce el drenaje invisible.`,
+      title: "Tope semanal a cafés y compras hormiga",
+      description: `${antExpensesVisitCount} compras pequeñas registradas este mes.`,
       category: "Gastos Hormiga y Cafés",
-      monthlySavingsGTQ: antCutGTQ,
-      annualSavingsGTQ: antCutGTQ * 12,
+      monthlySavingsGTQ: Math.max(85, antCutGTQ),
+      annualSavingsGTQ: Math.max(85, antCutGTQ) * 12,
       difficulty: "Fácil",
       defaultEnabled: true,
       unlockedAtStatements: 1,
-      badgeText: `${antExpensesVisitCount} visitas en el mes`,
+      badgeText: `${antExpensesVisitCount} visitas`,
     },
     {
       id: "save-subs",
-      title:
-        count >= 3
-          ? "Ajustar suscripciones con Inflación Silenciosa (Netflix / iCloud / Claro)"
-          : "Auditar cargos recurrentes automáticos y planes digitales",
+      title: "Ajustar suscripciones y cargos recurrentes",
       description:
-        count >= 3
-          ? "Detectamos incrementos silenciosos en 3 cargos recurrentes en Septiembre (+Q99/mes adicionales vs. Julio) más suscripciones duplicadas."
-          : "Cambiar a plan familiar compartido o cancelar 1 servicio de streaming de bajo uso.",
+        count >= 3 && inflationTotalGTQ > 0
+          ? `3 cargos fijos subieron +Q${inflationTotalGTQ.toFixed(0)}/mes en tu último corte.`
+          : `${recurringTxs.length} cargos automáticos detectados en tu tarjeta.`,
       category: "Suscripciones y Servicios",
       monthlySavingsGTQ: subOptimizationGTQ,
       annualSavingsGTQ: subOptimizationGTQ * 12,
       difficulty: "Fácil",
       defaultEnabled: count >= 3,
       unlockedAtStatements: 1,
-      badgeText:
-        count >= 3 ? "Inflación Silenciosa Detectada" : "Ahorro Recurrente",
+      badgeText: count >= 3 ? "Subió de precio" : "Recurrente",
     },
     {
       id: "save-mobility",
-      title: "Consolidar recargas de combustible y viajes cortos en Uber",
-      description:
-        "Programar carga completa en días de promoción bancaria y sustituir viajes cortos de hora pico.",
+      title: "Optimizar combustible y viajes cortos en app",
+      description: "Agrupar recargas en días de descuento bancario.",
       category: "Transporte y Combustible",
       monthlySavingsGTQ: fuelCashbackGTQ,
       annualSavingsGTQ: fuelCashbackGTQ * 12,
       difficulty: "Moderado",
       defaultEnabled: false,
       unlockedAtStatements: 2,
-      badgeText: "Optimización de Movilidad",
+      badgeText: "Movilidad",
     },
   ];
 
