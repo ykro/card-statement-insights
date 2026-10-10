@@ -1,55 +1,45 @@
 # Card Statement Insights (`card-statement-insights`)
 
-Analizador ejecutivo y progresivo de estados de cuenta de tarjetas de crédito bimonetarios (`GTQ Q` y `USD $`) con arquitectura **Privacy-First**: **funciona desde 1 solo estado de cuenta PDF (`1/3`)** ofreciendo desglose simultáneo en Quetzales y Dólares, separación de Extrafinanciamientos y decisiones cuantificadas, y **desbloquea el Motor de Tendencias Trimestrales al cargar 3 o más estados de cuenta (`3/3`)**.
+Analizador de estados de cuenta de tarjetas de crédito bimonetarios (`GTQ Q` y `USD $`) en PDF. Permite arrastrar uno o varios estados de cuenta para visualizar el gasto por categoría, comparar tendencias multi-mes, simular decisiones de ahorro y filtrar movimientos.
 
-> **Demo en Vivo (Producción en Vercel):** [**https://card-statement-insights.vercel.app**](https://card-statement-insights.vercel.app)
->
-> **Especificación del Proyecto:** [`SPEC.md`](./SPEC.md) · **Guía de Onboarding:** [`docs/ONBOARDING.md`](./docs/ONBOARDING.md) · **Arquitectura y Privacidad:** [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
->
-> **Índice General de Prototipos:** [`ykro/ilab-aibuilders-prototypes`](https://github.com/ykro/ilab-aibuilders-prototypes)
-
----
-
-## Diseño de Dos Pantallas y Experiencia Progresiva (1 a 3+ PDFs)
-
-La interfaz separa estrictamente la **Pantalla 1 (Ingesta de PDFs)** de la **Pantalla 2 (Dashboard Ejecutivo de Decisiones y Tendencias)** para evitar saturación visual, mostrando en simultáneo los consumos en Quetzales (`Q`), los consumos internacionales/digitales en Dólares (`$`) y las cuotas de Extrafinanciamiento (`FIN/CT` y `FIN/IN`):
-
-| Nivel de Carga | Modo Activo | Qué Desbloquea Inmediatamente en el Dashboard | Acción Progresiva |
-| :--- | :--- | :--- | :--- |
-| **`1/3` Estados de Cuenta** | **Modo Radiografía (`snapshot-1m`)** | • KPIs simultáneos en `GTQ (Q)` (`Q11,344.19`), `USD ($)` (`$2,910.73`) y `Extrafinanciamiento` (`Q36,638.02`)<br>• Panel **Información para Decidir** con 4 decisiones cuantificadas<br>• Gráfico de velocidad semanal del corte e inercia proyectada<br>• Concentración de comercios y auditoría de suscripciones bimonetarias. | Botón directo para agregar más PDFs o simular la curva trimestral de 3 meses. |
-| **`2/3` Estados de Cuenta** | **Modo Comparativo (`comparative-2m`)** | • Todo lo anterior + **Variación Mes contra Mes ($\Delta\%_{\text{MoM}}$)** en gasto regular y por categoría<br>• Detección temprana de incrementos en cargos automáticos. | Invitación a agregar 1 estado de cuenta más para confirmar tendencias estructurales de 3 cortes. |
-| **`3/3+` Estados de Cuenta** | **Modo Tendencias Completo (`trends-3m`)** | • **Gráfico de Evolución Trimestral (`Jul → Ago → Sep`)** por categoría<br>• **Alertas de *Lifestyle Creep*** (categorías con 2 alzas consecutivas $>4\%$ y crecimiento $>12\%$)<br>• **Detector de Inflación Silenciosa en Suscripciones** (`Tigo`, `Apple.com/bill`, `Claude`, `Netflix`). | Indicador de **Tendencia Trimestral Activa (`3 MESES`)**. |
+- **Demo en producción:** [https://card-statement-insights.vercel.app](https://card-statement-insights.vercel.app)
+- **Especificación funcional:** [`SPEC.md`](./SPEC.md)
+- **Guía de uso:** [`docs/ONBOARDING.md`](./docs/ONBOARDING.md)
+- **Arquitectura técnica:** [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
+- **Índice de prototipos:** [`ykro/ilab-aibuilders-prototypes`](https://github.com/ykro/ilab-aibuilders-prototypes)
 
 ---
 
-## Diagramas de Arquitectura y Flujo del Sistema
+## Estructura de la Aplicación
 
-### Diagrama 1: Arquitectura Privacy-First de Descompresión PDF (`zlib FlateDecode`) y Motor Bimonetario
-
-![Arquitectura Privacy-First de Ingesta PDF y Motor Bimonetario](./docs/diagrams/privacy-ingestion-architecture.svg)
+1. **Pantalla de Carga (Drag & Drop Multi-PDF):** Zona interactiva para arrastrar y soltar uno o varios archivos `.pdf` simultáneamente, o cargar ejemplos de 1 mes y 3 meses.
+2. **Dashboard en 4 Vistas Gráficas:**
+   - **Resumen y Gráficas:** 3 indicadores principales (Compras en Quetzales `Q`, Compras en Dólares `$`, Cuotas / Extrafinanciamiento `Q`) y 3 gráficas: gasto por categoría (`Q` vs `$`), proporción de consumo regular vs. extrafinanciamiento y top 8 comercios por volumen y número de cargos.
+   - **Tendencias (1 a 3+ Meses):** Barra superior para arrastrar más PDFs en vivo, gráfica de evolución multi-mes con proyección a 90 días, indicadores de variación mensual y barras de velocidad de crecimiento por categoría.
+   - **Decisiones:** Gráfica comparativa del impacto en el próximo estado de cuenta (corte actual vs. nuevo corte meta) y 4 tarjetas de decisión interactivas con barra comparativa (`Actual` vs `Meta`).
+   - **Movimientos:** Tabla de transacciones con búsqueda y filtros por moneda (`Todos`, `Quetzales Q`, `Dólares $`, `Cuotas`) y por mes.
 
 ---
 
-### Diagrama 2: Progresión de Estados desde Pantalla de Carga hasta Motor de Tendencias 3M
+## Diagramas del Sistema
+
+### Arquitectura de Ingesta PDF y Motor Bimonetario
+
+![Arquitectura de Ingesta PDF y Motor Bimonetario](./docs/diagrams/privacy-ingestion-architecture.svg)
+
+### Progresión de Análisis de 1 a 3+ Estados de Cuenta
 
 ![Progresión de Estados de Experiencia Progresiva](./docs/diagrams/progressive-experience-states.svg)
 
----
-
-### Diagrama 3: Separación de Flujos Bimonetarios (`GTQ Q` + `USD $` + `Extrafinanciamiento`) hacia Decisiones
+### Flujo de Separación Bimonetaria y Decisiones
 
 ![Flujo de Separación Bimonetaria y Decisiones](./docs/diagrams/bimonetary-decision-flow.svg)
 
 ---
 
-## Inicio Rápido y Documentación Detallada
+## Ejecución Local
 
 ```bash
 npm install
 npm run dev
-# Abre http://localhost:3000
 ```
-
-- **Guía paso a paso para probar los modos `1/3` y `3/3`, subir PDFs reales y usar el panel de Decisiones:** Lee [`docs/ONBOARDING.md`](./docs/ONBOARDING.md).
-- **Detalle del extractor de flujos PDF (`src/lib/pdf-statement-parser.ts`), anonimización PII y formulación matemática:** Lee [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
-- **Especificación funcional de diseño progresivo:** Lee [`SPEC.md`](./SPEC.md).
