@@ -37,6 +37,14 @@ Analizador de estados de cuenta de tarjetas de crédito bimonetarios (`GTQ Q` y 
 
 ---
 
+## Temas para Artículos Técnicos y de Producto
+
+1. **Extracción determinista en milisegundos de estados de cuenta bancarios en PDF frente a la latencia de OCR y LLMs multimodales:** Cómo descomprimir flujos `FlateDecode` (`zlib.inflateSync`) e interpretar operadores posicionales de texto en PDF (`BT...ET`, `Tj`, `TJ`) para extraer cerca de 100 transacciones bimonetarias en ~6 ms, evitando timeouts por imágenes incrustadas en estados de cuenta reales.
+2. **De estados de cuenta aislados a inteligencia de tendencias multi-mes:** Cómo el análisis progresivo de 1 a 3 o más cortes mensuales permite detectar aceleración de gasto por categoría, cobros hormiga o suscripciones fragmentadas y separar el impacto real del extrafinanciamiento/cuotas frente a las compras regulares del mes.
+3. **Diseño de tableros financieros orientados a la decisión y no solo al resumen contable:** Cómo transformar tablas de transacciones bancarias en escenarios accionables (`Actual` vs. `Meta`) que cuantifican el impacto directo de cada ajuste sobre el pago del próximo estado de cuenta en Quetzales y Dólares.
+
+---
+
 ## Ejecución Local
 
 ```bash
