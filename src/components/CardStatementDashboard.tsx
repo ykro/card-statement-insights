@@ -230,8 +230,8 @@ export default function CardStatementDashboard() {
   const isMultiMonth = report.statementCount >= 2;
 
   const shortCardName = useMemo(() => {
-    const raw = report.latestStatement.cardAlias || "Banco Industrial ·••• 2117";
-    return raw.replace("MasterCard Black ", "").replace("••••", "·•••");
+    const raw = report.latestStatement.cardAlias || "Banco Demo ·••• 4829";
+    return raw.replace("MasterCard Black ", "").replace("Visa Infinite ", "").replace("••••", "·•••");
   }, [report.latestStatement.cardAlias]);
 
   const loadedMonthsPillText = useMemo(() => {

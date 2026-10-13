@@ -18,9 +18,9 @@ Para resolverlo de raíz sin dependencias nativas que fallen en entornos serverl
    - Extrae secuencias de texto decodificando escapes octales (`\323` → `Ó`, `\315` → `Í`) y registra el desplazamiento horizontal `dx` de cada celda numérica.
    - Distingue automáticamente cargos/compras (`dx < 340`, columna Débitos) de pagos/abonos (`dx >= 340` o descriptores `GRACIAS POR SU PAGO`, columna Créditos).
 3. **Partición en 3 Libros Simultáneos:**
-   - **Movimientos en Quetzales (`GTQ`):** Compras locales regulares (ej. 58 transacciones por `Q11,344.19`).
-   - **Movimientos en Dólares (`USD`):** Compras internacionales y suscripciones digitales (ej. 35 transacciones por `$2,910.73`).
-   - **Extrafinanciamientos (`FIN/CT` y `FIN/IN`):** Cuotas estructuradas de capital e interés (ej. 8 cargos por `Q36,638.02`), aisladas en su propio canal para no distorsionar la distribución porcentual del estilo de vida mensual.
+   - **Movimientos en Quetzales (`GTQ`):** Compras locales regulares (ej. 22 transacciones por `Q6,850.00`).
+   - **Movimientos en Dólares (`USD`):** Compras internacionales y suscripciones digitales (ej. 8 transacciones por `$980.00`).
+   - **Extrafinanciamientos (`FIN/CT` y `FIN/IN`):** Cuotas estructuradas de capital e interés (ej. 4 cargos por `Q6,850.00`), aisladas en su propio canal para no distorsionar la distribución porcentual del estilo de vida mensual.
 
 ![Flujo de Separación Bimonetaria y Decisiones](./diagrams/bimonetary-decision-flow.svg)
 
@@ -36,15 +36,15 @@ Para resolverlo de raíz sin dependencias nativas que fallen en entornos serverl
 | **Identificación Tributaria (NIT Guatemala)** | `\bNIT[\s:]*\d{5,10}-?[0-9Kk]\b` | `NIT: [REDACTADO-LOCAL]` |
 | **Documento Personal de Identificación (DPI)** | `\bDPI[\s:]*\d{4}\s?\d{5}\s?\d{4}\b` | `DPI: [REDACTADO-LOCAL]` |
 | **Nombre del Titular** | `//\d+\s+\|\s+\d{2}/\d{2}\s+\|\s+([A-Z\s]+)` | `Titular: [TITULAR-ANONIMIZADO]` |
-| **Dirección / Domicilio Fiscal** | `CALZADA ... ZONA ... GUATEMALA` | `Dirección: [DOMICILIO-REDACTADO-LOCALMENTE]` |
+| **Dirección / Domicilio Fiscal** | `AV ... ZONA ... CIUDAD` | `Dirección: [DOMICILIO-REDACTADO-LOCALMENTE]` |
 
 ### 2.2 Normalización de Descriptores Bancarios (`normalizeDirtyMerchantName`)
-- `DLC*UBER RIDES NLD` / `DLC*UBER RIDES USA` / `DLO*UBER RIDES MEX` → **`Uber Rides (Viajes)`** (`Transporte y Combustible`, `isAntExpense = true`)
-- `COFIQO STAHL Y COMPAQ GTM` → **`Cofiño Stahl (Servicio Automotriz)`** (`Transporte y Combustible`)
-- `GASTOS MEDICOS-EL ROBLE` → **`Seguros El Roble (Gastos Médicos)`** (`Salud y Farmacia`, `isRecurring = true`)
-- `AIRBNB * HMJJKEX4BA GBR` → **`Airbnb (Alojamiento Internacional)`** (`Viajes y Experiencias`)
-- `ANTHROPIC* CLAUDE SUB USA` → **`Anthropic Claude Pro/Max`** (`Suscripciones y Servicios`, `isRecurring = true`)
-- `FIN/CT ...` / `FIN/IN ...` → **`Extrafinanciamiento BI (Capital / Interés)`** (`Extrafinanciamiento y Cuotas`, `isExtrafinanciamiento = true`)
+- `UBER*TRIP LOCAL` → **`Uber Rides (Viajes)`** (`Transporte y Combustible`, `isAntExpense = true`)
+- `TALLER AUTO EXPRESS GTM` → **`Taller Auto Express`** (`Transporte y Combustible`)
+- `SEGURO MEDICO FAMILIAR GTM` → **`Seguro Médico Familiar`** (`Salud y Farmacia`, `isRecurring = true`)
+- `BOOKING.COM*HOTEL INT USA` → **`Booking.com (Alojamiento)`** (`Viajes y Experiencias`)
+- `OPENAI *CHATGPT PLUS USA` → **`ChatGPT Plus`** (`Suscripciones y Servicios`, `isRecurring = true`)
+- `FIN/CT ...` / `FIN/IN ...` → **`Extrafinanciamiento (Capital / Interés)`** (`Extrafinanciamiento y Cuotas`, `isExtrafinanciamiento = true`)
 
 ---
 
@@ -71,6 +71,6 @@ $$G_{c,2}^{\text{cons}} > 1.04 \cdot G_{c,1}^{\text{cons}} \quad \wedge \quad G_
 ### 3.3 Generación de Decisiones Ejecutivas (`ExecutiveDecisionItem`)
 El motor evalúa cuatro vectores sobre las transacciones extraídas para construir el panel **Información para Decidir**:
 1. **Frecuencia de Micro-Movilidad y Gastos Hormiga:** Conteo de viajes en app (`Uber Rides`) y micro-consumos menores a `Q85` / `$11 USD`.
-2. **Auditoría de Suscripciones Bimonetarias y Cobros Múltiples:** Suma de cargos recurrentes en `USD` (`Anthropic Claude`, `Apple.com/bill`, `Netflix`, `Spotify`) y `GTQ` (`Tigo`, `Seguros El Roble`, `Membresía Club BI`).
+2. **Auditoría de Suscripciones Bimonetarias y Servicios Fijos:** Suma de cargos recurrentes en `USD` (`ChatGPT Plus`, `Adobe Creative Cloud`, `Netflix`, `Spotify`, `AWS`) y `GTQ` (`Plan Móvil Postpago`, `Seguro Médico Familiar`).
 3. **Costo Financiero de Extrafinanciamientos (`FIN/IN` vs `FIN/CT`):** Desglose entre la cuota que amortiza capital (`FIN/CT`) y la cuota que paga intereses mensuales (`FIN/IN`) para priorizar abonos extraordinarios a capital.
 4. **Optimización de Delivery y Exposición Cambiaria en Viajes (`USD`).**

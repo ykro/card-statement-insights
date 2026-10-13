@@ -29,7 +29,7 @@ La aplicación organiza el flujo en dos vistas dedicadas (`screen === "upload"` 
    - Separa automáticamente `MOVIMIENTOS EN QUETZALES`, `MOVIMIENTOS EN DOLARES` y `EXTRAFINANCIAMIENTOS`.
 2. **Redacción PII Local y Normalización (`src/lib/statementAnalyzer.ts`):**
    - Anonimiza número de tarjeta, nombre del titular, NIT y dirección postal antes de cualquier procesamiento externo.
-   - Limpia descriptores bancarios (`DLC*UBER RIDES NLD`, `COFIQO STAHL Y COMPAQ GTM`, `PP*APPLE.COM/BILL USA`) y los agrupa por entidad comercial.
+   - Limpia descriptores bancarios (`UBER*TRIP LOCAL`, `TALLER AUTO EXPRESS GTM`, `ADOBE CREATIVE CLOUD USA`) y los agrupa por entidad comercial.
 3. **Enriquecimiento Compacto (`src/app/api/analyze-statements/route.ts`):**
    - Procesa primero con el parser determinista de alta velocidad y utiliza `gemini-3.8-flash` sobre texto compacto (~3 KB) como respaldo para formatos no estándar.
 
@@ -38,7 +38,7 @@ La aplicación organiza el flujo en dos vistas dedicadas (`screen === "upload"` 
 ## 3. Estructura Visual del Dashboard Ejecutivo (Pantalla 2)
 
 1. **Barra Superior de Navegación:** Botón **"Subir o agregar estados de cuenta"** para volver a la Pantalla 1, metadatos del corte (`Fecha de corte`, `Fecha de pago`, tiempo de extracción en ms) y selector rápido `1 mes` vs `3 meses`.
-2. **Fila 01 — Radiografía Bimonetaria Simultánea:** 4 tarjetas que muestran al mismo tiempo el consumo en Quetzales (`Q11,344.19`), el consumo en Dólares (`$2,910.73`), el consolidado regular (`Q33,902.35` / `$4,374.50`) y las cuotas de Extrafinanciamiento (`Q36,638.02`).
+2. **Fila 01 — Radiografía Bimonetaria Simultánea:** 4 tarjetas que muestran al mismo tiempo el consumo en Quetzales (`Q6,850.00`), el consumo en Dólares (`$980.00`), el consolidado regular (`Q14,445.00` / `$1,863.87`) y las cuotas de Extrafinanciamiento (`Q6,850.00`).
 3. **Fila 02 — Información para Decidir:** 4 tarjetas de decisión ejecutiva con evidencia exacta del estado de cuenta, acción sugerida y ahorro mensual/anual interactivo.
 4. **Fila 03 — Gráficos de Tendencias e Inercia:** Evolución trimestral por categoría (o velocidad semanal bimonetaria en 1M) + composición estructural `Q` vs `$` vs `Extrafinanciamiento`.
 5. **Fila 04 y 05 — Indicadores de Velocidad, Concentración de Comercios y Auditoría de Suscripciones/Extrafinanciamiento.**

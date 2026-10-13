@@ -51,8 +51,8 @@ npm run lint
 Al abrir la aplicación verás una pantalla minimalista dedicada exclusivamente a la carga de archivos:
 1. **Subir de 1 a 3+ PDFs propios:** Arrastra tu estado de cuenta en PDF (ej. Banco Industrial MasterCard / Visa, BAC) o selecciónalo desde tu equipo.
 2. **Botones de Exploración Rápida (sin archivo PDF a la mano):**
-   - **"Cargar ejemplo real Bimonetario (1 mes: Q + $ + Extraf)"**: Carga las 101 transacciones reales anonimizadas del corte de Septiembre 2026 (`Q11,344.19` en Quetzales, `$2,910.73` en Dólares y `Q36,638.02` en Extrafinanciamientos).
-   - **"Cargar tendencia de 3 meses (Jul – Sep 2026)"**: Carga la serie trimestral completa para explorar el motor de tendencias.
+   - **"Ver ejemplo de 1 mes"**: Carga un estado de cuenta sintético bimonetario de Septiembre 2026 (`Q6,850.00` en Quetzales, `$980.00` en Dólares y `Q6,850.00` en Extrafinanciamientos).
+   - **"Ver ejemplo de 3 meses"**: Carga la serie trimestral sintética (`Jul – Sep 2026`) para explorar el motor de tendencias.
 
 ### Pantalla 2: Dashboard Ejecutivo (`screen === "dashboard"`)
 Una vez procesado el PDF, la aplicación transiciona al dashboard ejecutivo:

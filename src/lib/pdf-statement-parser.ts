@@ -219,9 +219,9 @@ export function parsePdfStatementBuffer(
   const startTime = performance.now();
   const tokens = extractTokensFromPdfBuffer(pdfBuffer);
 
-  let bankName = "Banco Industrial";
-  let cardBrand = "MasterCard Black";
-  let cardMask = "2117";
+  let bankName = "Banco Emisor";
+  let cardBrand = "Visa Infinite";
+  let cardMask = "4829";
   let cutoffDate = "17/09/2026";
   let paymentDueDate = "11/10/2026";
   let monthKey = "2026-09";
@@ -253,7 +253,7 @@ export function parsePdfStatementBuffer(
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i].text;
 
-    // Card Mask: XXXX XXXX XXXX 2117
+    // Card Mask: XXXX XXXX XXXX 4829
     const maskMatch = t.match(/(?:XXXX\s+){2,3}(\d{4})/i);
     if (maskMatch) {
       cardMask = maskMatch[1];

@@ -216,13 +216,13 @@ export interface StatementAnalysisReport {
   activeStatements: CardStatement[];
   latestStatement: CardStatement;
   bimonetaryKpis: {
-    regularPurchasesGTQ: number; // Exact native Q purchases (e.g. Q11,344.19)
-    regularPurchasesUSD: number; // Exact native $ purchases (e.g. $2,910.73)
+    regularPurchasesGTQ: number; // Native Q purchases (e.g. Q6,850.00)
+    regularPurchasesUSD: number; // Native $ purchases (e.g. $980.00)
     regularPurchasesTxCountGTQ: number;
     regularPurchasesTxCountUSD: number;
     regularConsolidatedGTQ: number; // Q + ($ * 7.75)
     regularConsolidatedUSD: number; // $ + (Q / 7.75)
-    extrafinanciamientoGTQ: number; // Exact Q cuotas (e.g. Q36,638.02)
+    extrafinanciamientoGTQ: number; // Structured Q cuotas (e.g. Q6,850.00)
     extrafinanciamientoTxCount: number;
     grandTotalWithExtrafGTQ: number;
     paymentsMadeGTQ: number;
@@ -350,8 +350,8 @@ export function normalizeDirtyMerchantName(rawDescriptor: string): {
     const isCapital = upper.startsWith("FIN/CT");
     return {
       normalizedMerchant: isCapital
-        ? "Extrafinanciamiento BI (Capital)"
-        : "Extrafinanciamiento BI (Interés)",
+        ? "Extrafinanciamiento (Capital)"
+        : "Extrafinanciamiento (Interés)",
       category: "Extrafinanciamiento y Cuotas",
       isRecurring: true,
       isAntExpense: false,
@@ -368,7 +368,7 @@ export function normalizeDirtyMerchantName(rawDescriptor: string): {
       isAntExpense: false,
     };
   }
-  if (upper.includes("UBER EATS") || upper.includes("UBEREATS")) {
+  if (upper.includes("UBER EATS") || upper.includes("UBEREATS") || upper.includes("UBER*EATS")) {
     return {
       normalizedMerchant: "Uber Eats",
       category: "Delivery y Restaurantes",
@@ -394,9 +394,9 @@ export function normalizeDirtyMerchantName(rawDescriptor: string): {
       isAntExpense: true,
     };
   }
-  if (upper.includes("COFIQO STAHL") || upper.includes("COFINO STAHL")) {
+  if (upper.includes("TALLER AUTO") || upper.includes("SERVICIO AUTOMOTRIZ")) {
     return {
-      normalizedMerchant: "Cofiño Stahl (Servicio Automotriz)",
+      normalizedMerchant: "Taller Auto Express",
       category: "Transporte y Combustible",
       isRecurring: false,
       isAntExpense: false,
@@ -409,9 +409,9 @@ export function normalizeDirtyMerchantName(rawDescriptor: string): {
     upper.includes("PUMA ENERGY")
   ) {
     return {
-      normalizedMerchant: upper.includes("ESTACION DE SERVICIO")
-        ? "Estación de Servicio (Combustible)"
-        : "Gasolinera Uno",
+      normalizedMerchant: upper.includes("SHELL")
+        ? "Gasolinera Shell"
+        : "Estación de Servicio (Combustible)",
       category: "Transporte y Combustible",
       isRecurring: false,
       isAntExpense: false,
@@ -419,71 +419,43 @@ export function normalizeDirtyMerchantName(rawDescriptor: string): {
   }
   if (upper.includes("PARQUEO")) {
     return {
-      normalizedMerchant: "Parqueos (Fontabella / EON)",
+      normalizedMerchant: "Parqueos Urbanos",
       category: "Gastos Hormiga y Cafés",
       isRecurring: false,
       isAntExpense: true,
     };
   }
 
-  // Travel, Airlines, Lodging & Outdoor Expeditions
+  // Travel, Airlines & Lodging
+  if (upper.includes("BOOKING.COM") || upper.includes("BOOKING")) {
+    return {
+      normalizedMerchant: "Booking.com (Alojamiento)",
+      category: "Viajes y Experiencias",
+      isRecurring: false,
+      isAntExpense: false,
+    };
+  }
   if (upper.includes("AIRBNB")) {
     return {
-      normalizedMerchant: "Airbnb (Alojamiento Internacional)",
+      normalizedMerchant: "Airbnb (Alojamiento)",
       category: "Viajes y Experiencias",
       isRecurring: false,
       isAntExpense: false,
     };
   }
-  if (upper.includes("AEROMEXICO")) {
+  if (upper.includes("COPA AIRLINES") || upper.includes("AEROMEXICO") || upper.includes("AVIANCA")) {
     return {
-      normalizedMerchant: "Aeroméxico (Boletos Aéreos)",
+      normalizedMerchant: upper.includes("COPA")
+        ? "Copa Airlines"
+        : "Boletos Aéreos Internacionales",
       category: "Viajes y Experiencias",
       isRecurring: false,
       isAntExpense: false,
     };
   }
-  if (upper.includes("ULTRASIGNUP")) {
+  if (upper.includes("HOTEL")) {
     return {
-      normalizedMerchant: "UltraSignup (Eventos Trail Running)",
-      category: "Viajes y Experiencias",
-      isRecurring: false,
-      isAntExpense: false,
-    };
-  }
-  if (
-    upper.includes("PICO DE ORIZABA") ||
-    upper.includes("IZTACCIHUATL") ||
-    upper.includes("EXPEDICIONES")
-  ) {
-    return {
-      normalizedMerchant: upper.includes("EXPEDICIONES")
-        ? "Expediciones Guatemala"
-        : "Expediciones Alta Montaña México (WT*)",
-      category: "Viajes y Experiencias",
-      isRecurring: false,
-      isAntExpense: false,
-    };
-  }
-  if (
-    upper.includes("HOTEL") ||
-    upper.includes("RADISSON") ||
-    upper.includes("SOUMA")
-  ) {
-    return {
-      normalizedMerchant: upper.includes("SOUMA")
-        ? "Souma Hotel Lima"
-        : "Radisson Hotel & Suites",
-      category: "Viajes y Experiencias",
-      isRecurring: false,
-      isAntExpense: false,
-    };
-  }
-  if (upper.includes("MUSEO DEL OBJ") || upper.includes("SAN AGUSTIN BIKE")) {
-    return {
-      normalizedMerchant: upper.includes("MUSEO")
-        ? "Museo del Objeto (CDMX)"
-        : "San Agustín Bike Park",
+      normalizedMerchant: "Hotel & Alojamiento",
       category: "Viajes y Experiencias",
       isRecurring: false,
       isAntExpense: false,
@@ -491,23 +463,27 @@ export function normalizeDirtyMerchantName(rawDescriptor: string): {
   }
 
   // Supermarkets & Groceries
-  if (upper.includes("LA TORRE") || upper.includes("SUPERMERCADOS LA TORRE")) {
+  if (upper.includes("SUPERMERCADO CENTRAL") || upper.includes("LA TORRE")) {
     return {
-      normalizedMerchant: "Supermercados La Torre",
+      normalizedMerchant: upper.includes("LA TORRE")
+        ? "Supermercados La Torre"
+        : "Supermercado Central",
       category: "Supermercado y Despensa",
       isRecurring: false,
       isAntExpense: false,
     };
   }
-  if (
-    upper.includes("PAIZ") ||
-    upper.includes("WALMART") ||
-    upper.includes("WM EXPRESS")
-  ) {
+  if (upper.includes("PRICESMART")) {
     return {
-      normalizedMerchant: upper.includes("WM EXPRESS")
-        ? "Walmart Express (México)"
-        : "Paiz",
+      normalizedMerchant: "PriceSmart",
+      category: "Supermercado y Despensa",
+      isRecurring: false,
+      isAntExpense: false,
+    };
+  }
+  if (upper.includes("PAIZ") || upper.includes("WALMART")) {
+    return {
+      normalizedMerchant: "Walmart / Paiz",
       category: "Supermercado y Despensa",
       isRecurring: false,
       isAntExpense: false,
@@ -515,26 +491,17 @@ export function normalizeDirtyMerchantName(rawDescriptor: string): {
   }
 
   // Coffee & Ant Expenses
-  if (
-    upper.includes("BARISTA") ||
-    upper.includes("STARBUCKS") ||
-    upper.includes("& CAFE") ||
-    upper.includes("JULIA BAKERY")
-  ) {
+  if (upper.includes("STARBUCKS") || upper.includes("CAFE") || upper.includes("COFFEE")) {
     return {
-      normalizedMerchant: upper.includes("& CAFE")
-        ? "& Café UFM"
-        : upper.includes("JULIA")
-        ? "Julia Bakery"
-        : "Café Barista",
+      normalizedMerchant: upper.includes("STARBUCKS") ? "Starbucks" : "Cafetería Local",
       category: "Gastos Hormiga y Cafés",
       isRecurring: false,
       isAntExpense: true,
     };
   }
-  if (upper.includes("SUPER 24") || upper.includes("SHELL SELECT")) {
+  if (upper.includes("CONVENIENCIA") || upper.includes("SUPER 24")) {
     return {
-      normalizedMerchant: "Super 24 Conveniencia",
+      normalizedMerchant: "Tienda de Conveniencia",
       category: "Gastos Hormiga y Cafés",
       isRecurring: false,
       isAntExpense: true,
@@ -542,9 +509,11 @@ export function normalizeDirtyMerchantName(rawDescriptor: string): {
   }
 
   // Restaurants & Dining
-  if (upper.includes("SAN MARTIN") || upper.includes("SAN MARTÍN")) {
+  if (upper.includes("PANADERIA") || upper.includes("SAN MARTIN")) {
     return {
-      normalizedMerchant: "Panadería San Martín",
+      normalizedMerchant: upper.includes("TRIGAL")
+        ? "Panadería El Trigal"
+        : "Panadería San Martín",
       category: "Delivery y Restaurantes",
       isRecurring: false,
       isAntExpense: false,
@@ -553,35 +522,41 @@ export function normalizeDirtyMerchantName(rawDescriptor: string): {
   if (
     upper.includes("REST ") ||
     upper.includes("RESTAURANTE") ||
-    upper.includes("MCDONALDS") ||
-    upper.includes("CASA ALCAZAREN") ||
-    upper.includes("IZAKAYA SUSHI") ||
-    upper.includes("MI COMPA CHAV") ||
-    upper.includes("MALHECHO") ||
-    upper.includes("CIENA MEX") ||
-    upper.includes("NATOO PER")
+    upper.includes("BISTRO") ||
+    upper.includes("PIZZERIA")
   ) {
-    const cleanRest = upper.includes("CHICHI")
-      ? "Chichi Restaurante"
-      : upper.includes("POCAS")
-      ? "Pocas Restaurante"
-      : upper.includes("CASA ALCAZAREN")
-      ? "Casa Alcazarén"
-      : upper.includes("MCDONALDS")
-      ? "McDonald's"
-      : "Restaurantes CDMX / Lima";
     return {
-      normalizedMerchant: cleanRest,
+      normalizedMerchant: upper.includes("BISTRO")
+        ? "Bistró Zona 10"
+        : "Restaurante Local",
       category: "Delivery y Restaurantes",
       isRecurring: false,
-      isAntExpense: upper.includes("MCDONALDS"),
+      isAntExpense: false,
     };
   }
 
   // Subscriptions & Digital Services (GTQ & USD)
-  if (upper.includes("ANTHROPIC") || upper.includes("CLAUDE")) {
+  if (upper.includes("OPENAI") || upper.includes("CHATGPT") || upper.includes("ANTHROPIC") || upper.includes("CLAUDE")) {
     return {
-      normalizedMerchant: "Anthropic Claude Pro/Max",
+      normalizedMerchant: upper.includes("OPENAI") || upper.includes("CHATGPT")
+        ? "ChatGPT Plus"
+        : "Suscripción IA Pro",
+      category: "Suscripciones y Servicios",
+      isRecurring: true,
+      isAntExpense: false,
+    };
+  }
+  if (upper.includes("ADOBE")) {
+    return {
+      normalizedMerchant: "Adobe Creative Cloud",
+      category: "Suscripciones y Servicios",
+      isRecurring: true,
+      isAntExpense: false,
+    };
+  }
+  if (upper.includes("AMAZON WEB SERVICES") || upper.includes("AWS")) {
+    return {
+      normalizedMerchant: "AWS Cloud Services",
       category: "Suscripciones y Servicios",
       isRecurring: true,
       isAntExpense: false,
@@ -611,25 +586,17 @@ export function normalizeDirtyMerchantName(rawDescriptor: string): {
       isAntExpense: false,
     };
   }
-  if (upper.includes("TIGO")) {
+  if (upper.includes("TELEFONIA") || upper.includes("TIGO") || upper.includes("CLARO")) {
     return {
-      normalizedMerchant: "Tigo Guatemala",
+      normalizedMerchant: "Plan Móvil Postpago",
       category: "Suscripciones y Servicios",
       isRecurring: true,
       isAntExpense: false,
     };
   }
-  if (upper.includes("CLARO")) {
+  if (upper.includes("MEMBRESIA")) {
     return {
-      normalizedMerchant: "Claro Guatemala",
-      category: "Suscripciones y Servicios",
-      isRecurring: true,
-      isAntExpense: false,
-    };
-  }
-  if (upper.includes("MEMBRESIA CLUB BI")) {
-    return {
-      normalizedMerchant: "Membresía Club BI",
+      normalizedMerchant: "Membresía Tarjeta",
       category: "Suscripciones y Servicios",
       isRecurring: true,
       isAntExpense: false,
@@ -638,56 +605,31 @@ export function normalizeDirtyMerchantName(rawDescriptor: string): {
 
   // Health, Insurance & Wellness
   if (
+    upper.includes("SEGURO MEDICO") ||
     upper.includes("GASTOS MEDICOS") ||
-    upper.includes("EL ROBLE") ||
-    upper.includes("QUIROPRACTICA") ||
-    upper.includes("MEDICI") ||
-    upper.includes("GALENO") ||
-    upper.includes("CRUZ VERDE") ||
     upper.includes("FARMACIA") ||
-    upper.includes("WELLNESS")
+    upper.includes("LABORATORIO")
   ) {
-    const cleanHealth = upper.includes("EL ROBLE")
-      ? "Seguros El Roble (Gastos Médicos)"
-      : upper.includes("QUIROPRACTICA")
-      ? "Clínica Quiropráctica"
-      : upper.includes("MEDICI")
-      ? "Centro Médico Medici"
-      : upper.includes("FARMACIA")
-      ? "Farmacia"
-      : upper.includes("WELLNESS")
-      ? "The Mat Wellness"
-      : "Farmacias Galeno";
+    const cleanHealth =
+      upper.includes("SEGURO") || upper.includes("GASTOS MEDICOS")
+        ? "Seguro Médico Familiar"
+        : upper.includes("FARMACIA")
+        ? "Farmacia Batres"
+        : "Centro Médico / Laboratorio";
     return {
       normalizedMerchant: cleanHealth,
       category: "Salud y Farmacia",
-      isRecurring: upper.includes("EL ROBLE"),
+      isRecurring: upper.includes("SEGURO") || upper.includes("GASTOS MEDICOS"),
       isAntExpense: false,
     };
   }
 
-  // Retail, Personal Care & Lifestyle
-  if (upper.includes("FLORISTERIA")) {
+  // Retail & Department Stores
+  if (upper.includes("TIENDA DEPARTAMENTAL") || upper.includes("SIMAN") || upper.includes("MAX")) {
     return {
-      normalizedMerchant: "Floristería Guatemala",
+      normalizedMerchant: "Tienda Departamental",
       category: "Compras y Cuotas (MSI)",
       isRecurring: false,
-      isAntExpense: false,
-    };
-  }
-  if (upper.includes("BARBER SHOP") || upper.includes("EDUAR")) {
-    return {
-      normalizedMerchant: "Eduar's Barber Shop",
-      category: "Compras y Cuotas (MSI)",
-      isRecurring: false,
-      isAntExpense: false,
-    };
-  }
-  if (upper.includes("SIMAN") || upper.includes("MAX DISTELSA") || upper.includes("CUOTA")) {
-    return {
-      normalizedMerchant: "Almacenes Siman (Visacuotas)",
-      category: "Compras y Cuotas (MSI)",
-      isRecurring: true,
       isAntExpense: false,
     };
   }
@@ -695,7 +637,7 @@ export function normalizeDirtyMerchantName(rawDescriptor: string): {
   return {
     normalizedMerchant: rawDescriptor
       .replace(/^(\*?RCT\*|POS\*|BAC\*|BI\*|VISANET\*|CLIP MX\*|CLIP\*|DLC\*|DLO\*|MERPAGO\*|BPK\*|0\*)\s*/i, "")
-      .replace(/\s+(GTM|MEX|PER|USA|NLD|GBR|SWE)$/i, "")
+      .replace(/\s+(GTM|MEX|PER|USA|NLD|GBR|SWE|PAN)$/i, "")
       .trim(),
     category: "Compras y Cuotas (MSI)",
     isRecurring: false,
@@ -1504,7 +1446,7 @@ export function analyzeStatements(
     });
   }
 
-  // Decision 2: Bimonetary Subscriptions Audit (Claude, Apple.com/bill, Netflix, Spotify, Tigo)
+  // Decision 2: Bimonetary Subscriptions Audit
   if (subscriptions.length > 0) {
     const subNames = subscriptions
       .slice(0, 4)
@@ -1519,9 +1461,9 @@ export function analyzeStatements(
       id: "dec-bimonetary-subs",
       priority: "Alta Prioridad",
       category: "Suscripciones y Servicios",
-      title: "Auditar suscripciones digitales bimonetarias y cobros múltiples",
+      title: "Auditar suscripciones digitales bimonetarias y servicios fijos",
       shortTitle: "Unificar suscripciones Q y USD",
-      shortAction: "Consolidar paquetes de Tigo y auditar cargos duplicados en Apple/streaming.",
+      shortAction: "Consolidar planes anuales de software/streaming y revisar cargos automáticos en USD.",
       currentSpendGTQ: currentSubGtq,
       targetSpendGTQ: Math.max(0, currentSubGtq - subSavingsGtq),
       evidenceText: `Detectamos ${recurringTxs.length} cargos recurrentes: $${totalUsdSubsNative.toFixed(
@@ -1532,9 +1474,9 @@ export function analyzeStatements(
         0
       )}/mes). Incluye: ${subNames}.`,
       rationaleText:
-        "Se observan múltiples cobros en el mismo corte (ej. 3 cargos de Tigo por Q560 y 2 cargos de Apple.com/bill por $163.30 USD) junto con suscripciones IA/Streaming en dólares.",
+        "Las suscripciones digitales facturadas en dólares junto con servicios locales acumulan un cargo fijo mensual que crece con ajustes de tarifa.",
       actionStep:
-        "Unificar paquetes de telecomunicaciones (Tigo) en una sola factura y revisar cobros anuales/extras dentro de Apple.com/bill.",
+        "Cambiar licencias de software esenciales a facturación anual con descuento y cancelar plataformas con baja utilización.",
       monthlySavingsGTQ: subSavingsGtq,
       monthlySavingsUSD: Number((subSavingsGtq / GTQ_PER_USD).toFixed(2)),
       annualSavingsGTQ: subSavingsGtq * 12,
@@ -1543,7 +1485,7 @@ export function analyzeStatements(
     });
   }
 
-  // Decision 3: Extrafinanciamientos & Cuotas vs Flujo Mensual (or Delivery/Restaurantes optimization)
+  // Decision 3: Extrafinanciamientos & Cuotas vs Flujo Mensual
   if (extrafinanciamientoGTQ > 0) {
     const finInterestRows = latestExtrafTxs.filter((t) =>
       t.rawDescriptor.includes("FIN/IN")
@@ -1553,8 +1495,8 @@ export function analyzeStatements(
     );
     const totalInterestGtq = sumGTQ(finInterestRows);
     const totalCapitalGtq = sumGTQ(finCapitalRows);
-    const interestSavingsGtq = Math.max(650, Math.round(totalInterestGtq * 0.5));
-    const currentInterestGtq = Math.max(1200, Math.round(totalInterestGtq));
+    const interestSavingsGtq = Math.max(450, Math.round(totalInterestGtq * 0.5));
+    const currentInterestGtq = Math.max(900, Math.round(totalInterestGtq));
 
     executiveDecisions.push({
       id: "dec-extrafinanciamiento-structure",
@@ -1562,10 +1504,10 @@ export function analyzeStatements(
       category: "Extrafinanciamiento y Cuotas",
       title: "Amortizar líneas de Extrafinanciamiento con mayor carga de interés (FIN/IN)",
       shortTitle: "Amortizar intereses de extrafinanciamiento",
-      shortAction: "Abonar a capital en líneas FIN 000011 y 000010 para recortar intereses mensuales.",
+      shortAction: "Realizar abono extraordinario a capital en líneas activas para reducir cargos FIN/IN.",
       currentSpendGTQ: currentInterestGtq,
       targetSpendGTQ: Math.max(0, currentInterestGtq - interestSavingsGtq),
-      evidenceText: `8 cargos de Extrafinanciamiento suman Q${extrafinanciamientoGTQ.toLocaleString(
+      evidenceText: `${latestExtrafTxs.length} cargos de Extrafinanciamiento suman Q${extrafinanciamientoGTQ.toLocaleString(
         "es-GT",
         { minimumFractionDigits: 2 }
       )}: Q${totalCapitalGtq.toLocaleString("es-GT", {
@@ -1574,9 +1516,9 @@ export function analyzeStatements(
         minimumFractionDigits: 2,
       })} solo en intereses mensuales (FIN/IN).`,
       rationaleText:
-        "Las líneas 000010 y 000011 concentran Q5,011.89/mes únicamente en intereses financieros (FIN/IN), superando todo tu gasto mensual en restaurantes y supermercado.",
+        `Los cargos por intereses mensuales (Q${totalInterestGtq.toLocaleString("es-GT", { minimumFractionDigits: 2 })}/mes en FIN/IN) representan costo financiero puro que puede reducirse amortizando capital.`,
       actionStep:
-        "Priorizar abono extraordinario a capital en las líneas FIN 000011 (Q3,640 de interés) y FIN 000010 (Q1,371.89 de interés) para ahorrar intereses futuros.",
+        "Priorizar abono extraordinario a capital en la línea con mayor tasa de interés para recortar el costo financiero de los próximos cortes.",
       monthlySavingsGTQ: interestSavingsGtq,
       monthlySavingsUSD: Number((interestSavingsGtq / GTQ_PER_USD).toFixed(2)),
       annualSavingsGTQ: interestSavingsGtq * 12,
@@ -1601,7 +1543,7 @@ export function analyzeStatements(
       id: "dec-dining-fx",
       priority: "Oportunidad Rápida",
       category: "Delivery y Restaurantes",
-      title: "Optimizar Delivery (Uber Eats / Rappi) y consumo internacional en USD",
+      title: "Optimizar Delivery (PedidosYa / Uber Eats) y consumo internacional en USD",
       shortTitle: "Limitar delivery y diferencial USD",
       shortAction: "Reducir pedidos entre semana un 40% y liquidar saldo USD antes del corte.",
       currentSpendGTQ: currentCombined,
@@ -1615,10 +1557,10 @@ export function analyzeStatements(
       ).toFixed(2)} USD.`,
       rationaleText:
         count >= 3
-          ? "La tendencia de 3 meses muestra aceleración en pedidos por aplicación y consumos fuera de casa durante semanas de viaje."
+          ? "La tendencia de 3 meses muestra aceleración en pedidos por aplicación y consumos fuera de casa."
           : "Separar el presupuesto de viajes internacionales del gasto cotidiano de restaurantes evita que el corte en dólares desbalancee tu liquidez en Quetzales.",
       actionStep:
-        "Reducir 40% los pedidos entre semana en Uber Eats/Rappi y liquidar el saldo en USD ($2,910.73) antes de la fecha de pago para evitar diferencial cambiario bancario.",
+        `Reducir 40% los pedidos entre semana en apps de delivery y liquidar el saldo en USD ($${regularPurchasesUSD.toFixed(2)}) antes de la fecha de pago para evitar diferencial cambiario.`,
       monthlySavingsGTQ: targetSavingsGtq,
       monthlySavingsUSD: Number((targetSavingsGtq / GTQ_PER_USD).toFixed(2)),
       annualSavingsGTQ: targetSavingsGtq * 12,
@@ -1652,20 +1594,19 @@ export function analyzeStatements(
       a.date.localeCompare(b.date)
     );
     const weekBuckets = [
-      { label: "Semana 1 (15–22 Ago)", short: "Sem 1", txs: [] as StatementTransaction[] },
-      { label: "Semana 2 (23–30 Ago)", short: "Sem 2", txs: [] as StatementTransaction[] },
-      { label: "Semana 3 (31 Ago–7 Sep)", short: "Sem 3", txs: [] as StatementTransaction[] },
-      { label: "Semana 4 (8–17 Sep)", short: "Sem 4", txs: [] as StatementTransaction[] },
+      { label: "Semana 1 (18–24 Ago)", short: "Sem 1", txs: [] as StatementTransaction[] },
+      { label: "Semana 2 (25–31 Ago)", short: "Sem 2", txs: [] as StatementTransaction[] },
+      { label: "Semana 3 (1–8 Sep)", short: "Sem 3", txs: [] as StatementTransaction[] },
+      { label: "Semana 4 (9–17 Sep)", short: "Sem 4", txs: [] as StatementTransaction[] },
     ];
     sortedTxs.forEach((tx, idx) => {
       const dayNum = parseInt(tx.date.slice(8, 10), 10);
       const monthNum = parseInt(tx.date.slice(5, 7), 10);
       let bucketIdx = Math.min(3, Math.floor((idx / Math.max(1, sortedTxs.length)) * 4));
-      if (monthNum === 8 && dayNum <= 22) bucketIdx = 0;
-      else if (monthNum === 8 && dayNum <= 30) bucketIdx = 1;
-      else if ((monthNum === 8 && dayNum === 31) || (monthNum === 9 && dayNum <= 7))
-        bucketIdx = 2;
-      else if (monthNum === 9 && dayNum >= 8) bucketIdx = 3;
+      if (monthNum === 8 && dayNum <= 24) bucketIdx = 0;
+      else if (monthNum === 8 && dayNum <= 31) bucketIdx = 1;
+      else if (monthNum === 9 && dayNum <= 8) bucketIdx = 2;
+      else if (monthNum === 9 && dayNum >= 9) bucketIdx = 3;
       weekBuckets[bucketIdx].txs.push(tx);
     });
 
@@ -1771,6 +1712,17 @@ export function analyzeStatements(
   const usdEquivalentGtq = Number((regularPurchasesUSD * GTQ_PER_USD).toFixed(2));
   const denomTotal = Math.max(1, grandTotalWithExtrafGTQ);
 
+  const topGtqMerchantNames = topMerchants
+    .filter((m) => m.currentMonthNativeGTQ > 0)
+    .slice(0, 4)
+    .map((m) => m.merchant)
+    .join(", ");
+  const topUsdMerchantNames = topMerchants
+    .filter((m) => m.currentMonthNativeUSD > 0)
+    .slice(0, 4)
+    .map((m) => m.merchant)
+    .join(", ");
+
   const bimonetaryComposition: BimonetaryCompositionBlock[] = [
     {
       label: "Consumo Regular en Quetzales (GTQ)",
@@ -1783,7 +1735,7 @@ export function analyzeStatements(
       shareOfTotalPct: (regularPurchasesGTQ / denomTotal) * 100,
       txCount: regularPurchasesTxCountGTQ,
       color: "#2d3142",
-      description: `${regularPurchasesTxCountGTQ} compras locales (Cofiño Stahl, El Roble, Uber Rides, La Torre, San Martín, Tigo).`,
+      description: `${regularPurchasesTxCountGTQ} compras locales (${topGtqMerchantNames || "Supermercado, Transporte, Servicios"}).`,
     },
     {
       label: "Consumo Internacional y Digital (USD)",
@@ -1796,7 +1748,7 @@ export function analyzeStatements(
       shareOfTotalPct: (usdEquivalentGtq / denomTotal) * 100,
       txCount: regularPurchasesTxCountUSD,
       color: "#eb6c36",
-      description: `${regularPurchasesTxCountUSD} cargos en dólares (Airbnb, UltraSignup, Aeroméxico, México/Perú, Claude, Apple, Netflix, Spotify).`,
+      description: `${regularPurchasesTxCountUSD} cargos en dólares (${topUsdMerchantNames || "Viajes, Suscripciones Digitales"}).`,
     },
   ];
 
@@ -1829,10 +1781,10 @@ export function analyzeStatements(
       metricPrimary: `${uberCount || antExpensesVisitCount} viajes`,
       metricSecondary: `Q${uberNativeGtq.toFixed(0)} + $${uberNativeUsd.toFixed(2)}`,
       velocityDirection: "high-frequency",
-      statusLabel: "Alta Frecuencia (1 cada 1.2 días)",
+      statusLabel: "Alta Frecuencia Semanal",
       insight:
         uberCount > 0
-          ? `Es el comercio más repetido del estado de cuenta (${uberCount} de ${latestRegularTxs.length} transacciones regulares).`
+          ? `Es el comercio con más cargos individuales del estado de cuenta (${uberCount} de ${latestRegularTxs.length} transacciones regulares).`
           : `${antExpensesVisitCount} micro-transacciones acumuladas en el periodo.`,
     },
     {
@@ -1847,8 +1799,7 @@ export function analyzeStatements(
       })} (${((usdEquivalentGtq / Math.max(1, regularConsolidatedGTQ)) * 100).toFixed(0)}% del consumo)`,
       velocityDirection: "accelerating",
       statusLabel: `${regularPurchasesTxCountUSD} cargos en USD`,
-      insight:
-        "Airbnb ($678.81), UltraSignup ($492.45), Aeroméxico ($400.28) y expediciones en México explican el 69% del corte en dólares.",
+      insight: `${topUsdMerchantNames || "Reservas de viaje y suscripciones digitales"} concentran la mayor parte del saldo facturado en dólares.`,
     },
     {
       id: "vel-concentration",
@@ -1861,7 +1812,7 @@ export function analyzeStatements(
       insight: `Solo 5 comercios (${topMerchants
         .slice(0, 3)
         .map((m) => m.merchant.split(" ")[0])
-        .join(", ")}...) concentran dos tercios de tu gasto regular bimonetario.`,
+        .join(", ")}...) concentran la mayor parte de tu gasto regular bimonetario.`,
     },
   ];
 
@@ -1928,10 +1879,10 @@ export function analyzeStatements(
     piiAudit: {
       originalSnippet:
         latest.rawPiiSample ??
-        "Titular: [TITULAR] | Tarjeta MasterCard Black: XXXX XXXX XXXX 2117 | Dirección: Calzada San Juan, Guatemala",
+        "Titular: [TITULAR] | Tarjeta Visa Infinite: XXXX XXXX XXXX 4829 | Dirección: Av. Las Américas Zona 14, Ciudad",
       redactedSnippet:
         latest.redactedPiiSample ??
-        "Titular: [TITULAR-ANONIMIZADO] | Tarjeta MasterCard Black: [TARJETA-****-2117] | Dirección: [DOMICILIO-REDACTADO]",
+        "Titular: [TITULAR-ANONIMIZADO] | Tarjeta Visa Infinite: [TARJETA-****-4829] | Dirección: [DOMICILIO-REDACTADO]",
       redactedFieldsCount: count * 4,
       normalizedMerchantsCount: totalNormalizedMerchants,
     },
@@ -2018,8 +1969,8 @@ export function parseUploadedStatementText(
     const sampleRows: Omit<StatementTransaction, "id">[] = [
       {
         date: `${slot.key}-03`,
-        rawDescriptor: "SUPERMERCADOS LA TORRE GTM",
-        normalizedMerchant: "Supermercados La Torre",
+        rawDescriptor: "SUPERMERCADO CENTRAL GTM",
+        normalizedMerchant: "Supermercado Central",
         category: "Supermercado y Despensa",
         originalCurrency: "GTQ",
         originalAmount: Number((720 * baseScale).toFixed(2)),
@@ -2027,79 +1978,79 @@ export function parseUploadedStatementText(
       },
       {
         date: `${slot.key}-06`,
-        rawDescriptor: "DLC*UBER RIDES NLD",
+        rawDescriptor: "UBER*TRIP LOCAL",
         normalizedMerchant: "Uber Rides (Viajes)",
         category: "Transporte y Combustible",
         originalCurrency: "GTQ",
-        originalAmount: Number((640 * baseScale).toFixed(2)),
-        amountGTQ: Number((640 * baseScale).toFixed(2)),
+        originalAmount: Number((420 * baseScale).toFixed(2)),
+        amountGTQ: Number((420 * baseScale).toFixed(2)),
         isAntExpense: true,
       },
       {
         date: `${slot.key}-08`,
-        rawDescriptor: "COFINO STAHL SERVICIO GTM",
-        normalizedMerchant: "Cofiño Stahl (Servicio Automotriz)",
+        rawDescriptor: "TALLER AUTO EXPRESS GTM",
+        normalizedMerchant: "Taller Auto Express",
         category: "Transporte y Combustible",
         originalCurrency: "GTQ",
-        originalAmount: Number((2450 * baseScale).toFixed(2)),
-        amountGTQ: Number((2450 * baseScale).toFixed(2)),
+        originalAmount: Number((1450 * baseScale).toFixed(2)),
+        amountGTQ: Number((1450 * baseScale).toFixed(2)),
       },
       {
         date: `${slot.key}-10`,
-        rawDescriptor: "DLC*UBER EATS NLD",
-        normalizedMerchant: "Uber Eats",
+        rawDescriptor: "PEDIDOSYA*REST GTM",
+        normalizedMerchant: "PedidosYa",
         category: "Delivery y Restaurantes",
         originalCurrency: "GTQ",
-        originalAmount: Number((540 * baseScale).toFixed(2)),
-        amountGTQ: Number((540 * baseScale).toFixed(2)),
+        originalAmount: Number((480 * baseScale).toFixed(2)),
+        amountGTQ: Number((480 * baseScale).toFixed(2)),
       },
       {
         date: `${slot.key}-12`,
-        rawDescriptor: "GASTOS MEDICOS EL ROBLE",
-        normalizedMerchant: "Seguros El Roble (Gastos Médicos)",
+        rawDescriptor: "SEGURO MEDICO FAMILIAR GTM",
+        normalizedMerchant: "Seguro Médico Familiar",
         category: "Salud y Farmacia",
         originalCurrency: "GTQ",
-        originalAmount: 927.04,
-        amountGTQ: 927.04,
+        originalAmount: 650,
+        amountGTQ: 650,
         isRecurring: true,
       },
       {
         date: `${slot.key}-14`,
-        rawDescriptor: "TIGO GUATEMALA GTM",
-        normalizedMerchant: "Tigo Guatemala",
+        rawDescriptor: "TELEFONIA MOVIL PLAN GTM",
+        normalizedMerchant: "Plan Móvil Postpago",
         category: "Suscripciones y Servicios",
         originalCurrency: "GTQ",
-        originalAmount: Number((450 * baseScale).toFixed(2)),
-        amountGTQ: Number((450 * baseScale).toFixed(2)),
+        originalAmount: Number((350 * baseScale).toFixed(2)),
+        amountGTQ: Number((350 * baseScale).toFixed(2)),
         isRecurring: true,
       },
       {
         date: `${slot.key}-15`,
-        rawDescriptor: "AIRBNB * RESERVA INT",
-        normalizedMerchant: "Airbnb (Alojamiento Internacional)",
+        rawDescriptor: "BOOKING.COM*HOTEL INT USA",
+        normalizedMerchant: "Booking.com (Alojamiento)",
         category: "Viajes y Experiencias",
         originalCurrency: "USD",
-        originalAmount: Number((580 * baseScale).toFixed(2)),
-        amountGTQ: Number((580 * baseScale * GTQ_PER_USD).toFixed(2)),
+        originalAmount: Number((460 * baseScale).toFixed(2)),
+        amountGTQ: Number((460 * baseScale * GTQ_PER_USD).toFixed(2)),
       },
       {
         date: `${slot.key}-16`,
-        rawDescriptor: "ANTHROPIC* CLAUDE SUB USA",
-        normalizedMerchant: "Anthropic Claude Pro/Max",
+        rawDescriptor: "OPENAI *CHATGPT PLUS USA",
+        normalizedMerchant: "ChatGPT Plus",
         category: "Suscripciones y Servicios",
         originalCurrency: "USD",
-        originalAmount: 100,
-        amountGTQ: 775,
+        originalAmount: 20,
+        amountGTQ: 155,
         isRecurring: true,
       },
       {
         date: `${slot.key}-17`,
-        rawDescriptor: "PP*APPLE.COM/BILL USA",
-        normalizedMerchant: "Apple.com/bill (iCloud & App Store)",
+        rawDescriptor: "ADOBE CREATIVE CLOUD USA",
+        normalizedMerchant: "Adobe Creative Cloud",
         category: "Suscripciones y Servicios",
         originalCurrency: "USD",
-        originalAmount: Number((135 * baseScale).toFixed(2)),
-        amountGTQ: Number((135 * baseScale * GTQ_PER_USD).toFixed(2)),
+        originalAmount: Number((64.99 * baseScale).toFixed(2)),
+        amountGTQ: Number((64.99 * baseScale * GTQ_PER_USD).toFixed(2)),
         isRecurring: true,
       },
     ];
@@ -2117,7 +2068,7 @@ export function parseUploadedStatementText(
     monthKey: slot.key,
     monthLabel: slot.label,
     shortMonth: slot.short,
-    cardAlias: "Banco Industrial ·••• 2117",
+    cardAlias: "Banco Demo ·••• 4829",
     statementPeriod: `Corte ${slot.label}`,
     rawPiiSample:
       "Titular: [TITULAR-DETECTADO] | Tarjeta: [TARJETA-DETECTADA]",
