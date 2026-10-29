@@ -34,6 +34,8 @@ export interface ExtractedPdfStatementData {
     extrafinanciamientoUsd: number;
     paymentsGtq: number;
     paymentsUsd: number;
+    minimumPaymentGtq?: number;
+    minimumPaymentUsd?: number;
     otherCreditsGtq: number;
     otherCreditsUsd: number;
     closingBalanceGtq: number;
@@ -50,10 +52,136 @@ export interface ExtractedPdfStatementData {
   parseDurationMs: number;
 }
 
-interface PdfTextToken {
+export interface PdfTextToken {
   text: string;
   dx: number;
   dy: number;
+}
+
+export function redactPiiFromText(input: string): string {
+  return input
+    .replace(/(?:NOMBRE|TITULAR|CARDHOLDER)\s*:?\s*.*?(?=\b(?:NIT|DPI|TARJETA|CARD|DIRECCION|DIRECCIÓN)\b|$)/gi, "Titular: [REDACTADO] ")
+    .replace(/\b(?:NIT|DPI)\s*:?\s*(?!\d{13,16}\b)[\d-]{7,12}\b/gi, "[ID-REDACTADO]")
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[EMAIL-REDACTADO]")
+    .replace(/\b(?:NIT|DPI)\s*:?\s*[\d-]{7,20}\b/gi, "[ID-REDACTADO]")
+    .replace(/\b\d{13,16}\b/g, (digits) => `****-****-****-${digits.slice(-4)}`)
+    .replace(/\b(?:CALZADA|AVENIDA|AV\.|BOULEVARD|BLVD\.?|CARRETERA)\s+.*?(?=\b(?:TARJETA|CARD|NIT|DPI)\b|\||$)/gi, "[DIRECCION-REDACTADA]");
+}
+
+export function detectStatementIssuer(tokens: PdfTextToken[], fileName = ""): string {
+  const text = `${fileName} ${tokens.map((token) => token.text).join(" ")}`;
+  if (/G\s*&\s*T\s*CONTINENTAL|BANCO\s+G&T|GTC\b|TARJETA.*G&T|CREDIFACIL/i.test(text)) return "Banco G&T Continental";
+  if (/BANCO\s+INDUSTRIAL|BI\s+CREDITO|BI\s+MASTERCARD|BI\s+VISA/i.test(text) || (/Saldo al corte \(Pago de contado\)/i.test(text) && /Cuotas Extraf\/Cuotas:/i.test(text))) return "Banco Industrial";
+  return "Banco Emisor (GT)";
+}
+
+function emptyExtractedData(bankName: string, startTime: number): ExtractedPdfStatementData {
+  return {
+    isPdfParsed: false, bankName, cardBrand: "Visa", cardMask: "0000", cardAlias: `${bankName} · Visa •••• 0000`,
+    cutoffDate: "", paymentDueDate: "", monthKey: "", monthLabel: "", shortMonth: "", statementPeriod: "",
+    rawPiiSample: "PII removida localmente", redactedPiiSample: "PII removida localmente",
+    summary: { previousBalanceGtq: 0, previousBalanceUsd: 0, purchasesGtq: 0, purchasesUsd: 0, extrafinanciamientoGtq: 0, extrafinanciamientoUsd: 0, paymentsGtq: 0, paymentsUsd: 0, otherCreditsGtq: 0, otherCreditsUsd: 0, closingBalanceGtq: 0, closingBalanceUsd: 0, creditLimitGtq: 0, creditLimitUsd: 0, availableCreditGtq: 0, availableCreditUsd: 0 },
+    regularTransactionsGtq: [], regularTransactionsUsd: [], extrafinanciamientoTransactions: [], paymentTransactions: [], parseDurationMs: Number((performance.now() - startTime).toFixed(2)),
+  };
+}
+
+function normalizedDate(raw: string): string | null {
+  const match = raw.match(/^(\d{2})[\/-](\d{2})[\/-](\d{2,4})$/);
+  if (match) return `${match[3].length === 2 ? `20${match[3]}` : match[3]}-${match[2]}-${match[1]}`;
+  const month = raw.match(/^(\d{2})-([A-Z]{3})-(\d{4})$/i);
+  if (!month) return null;
+  const englishMonths: Record<string, string> = { JAN: "01", FEB: "02", MAR: "03", APR: "04", MAY: "05", JUN: "06", JUL: "07", AUG: "08", SEP: "09", OCT: "10", NOV: "11", DEC: "12" };
+  const abbreviation = month[2].toUpperCase();
+  const mm = Object.entries(MONTH_NAMES_ES).find(([, names]) => names.short.toUpperCase() === abbreviation)?.[0] ?? englishMonths[abbreviation];
+  return mm ? `${month[3]}-${mm}-${month[1]}` : null;
+}
+
+export function parseGytContinentalTokens(tokens: PdfTextToken[], fileName = "estado-de-cuenta.pdf"): ExtractedPdfStatementData {
+  const start = performance.now();
+  const output = emptyExtractedData("Banco G&T Continental", start);
+  const all = tokens.map((token) => token.text.trim()).filter(Boolean);
+  const text = all.join(" | ");
+  const normalized = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const brand = text.match(/\b(MASTERCARD|MASTER\s*CARD|VISA)\b/i)?.[1] ?? "Visa";
+  output.cardBrand = /^master/i.test(brand) ? "Mastercard" : "Visa";
+  const mask = text.match(/(?:X{4}[-\s]*){2,3}(\d{4})|(?:\*{4}[-\s]*){2,3}(\d{4})/i) ?? text.match(/\b\d{13,16}\b/);
+  if (mask) output.cardMask = mask[1] ?? mask[0].slice(-4);
+  output.cardAlias = `${output.bankName} · ${output.cardBrand} G&T Continental - *${output.cardMask}`;
+  const dateFor = (label: RegExp): string => {
+    const idx = all.findIndex((v) => label.test(v));
+    if (idx < 0) return "";
+    for (const candidate of all.slice(idx, idx + 5)) {
+      const dateCandidate = candidate.match(/\d{2}[\/-]\d{2}[\/-]\d{2,4}|\d{2}-[A-Z]{3}-\d{4}/i)?.[0] ?? candidate;
+      const normalized = normalizedDate(dateCandidate);
+      if (normalized) return `${normalized.slice(8, 10)}/${normalized.slice(5, 7)}/${normalized.slice(0, 4)}`;
+    }
+    return "";
+  };
+  output.cutoffDate = dateFor(/FECHA\s+DE\s+CORTE/i);
+  output.paymentDueDate = dateFor(/FECHA\s+(?:LIMITE\s+DE\s+PAGO|DE\s+PAGO\s+CONTADO)/i);
+  if (output.cutoffDate) {
+    const [, dd, mm, yyyy] = output.cutoffDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)!;
+    output.monthKey = `${yyyy}-${mm}`;
+    output.monthLabel = `${MONTH_NAMES_ES[mm]?.full ?? ""} ${yyyy}`.trim();
+    output.shortMonth = MONTH_NAMES_ES[mm]?.short ?? "";
+  }
+  output.statementPeriod = `Corte ${output.cutoffDate} · Pago ${output.paymentDueDate}`;
+
+  const summaryRules: [RegExp, keyof ExtractedPdfStatementData["summary"]][] = [
+    [/SALDO\s+ANTERIOR/i, "previousBalanceGtq"], [/COMPRAS\s+Y\s+(?:DEBITOS|CARGOS)/i, "purchasesGtq"],
+    [/(?:EXTRAFINANCIAMIENTO|CUOTAS\s+CREDIFACIL|CARGOS\s+DIFERIDOS)/i, "extrafinanciamientoGtq"],
+    [/(?:PAGOS\s+Y\s+CREDITOS|PAGOS\s+REALIZADOS)/i, "paymentsGtq"], [/(?:SALDO\s+AL\s+CORTE|PAGO\s+DE\s+CONTADO)/i, "closingBalanceGtq"],
+    [/PAGO\s+MINIMO/i, "minimumPaymentGtq"], [/LIMITE\s+DE\s+CREDITO/i, "creditLimitGtq"], [/DISPONIBLE/i, "availableCreditGtq"],
+  ];
+  for (const [pattern, key] of summaryRules) {
+    const idx = all.findIndex((value) => pattern.test(normalized(value)));
+    if (idx < 0) continue;
+    const row = all.slice(idx, idx + 6).join(" ");
+    const values = [...row.matchAll(/(?:Q\s*|GTQ\s*|US\$\s*|USD\s*)?([\d,]+\.\d{2})/gi)].map((match) => parseNumberToken(match[1]));
+    if (values.length) {
+      const usdKey = `${key.replace(/Gtq$/, "Usd")}` as keyof typeof output.summary;
+      output.summary[key] = values[0];
+      if (values.length > 1) output.summary[usdKey] = values[1];
+    }
+  }
+
+  let currency: "GTQ" | "USD" = "GTQ";
+  let paymentSection = false;
+  const dates = /^(\d{2}[\/-]\d{2}[\/-]\d{2,4}|\d{2}-[A-Z]{3}-\d{4})$/i;
+  for (let i = 0; i < all.length; i++) {
+    const upper = all[i].toUpperCase();
+    if (/MOVIMIENTOS EN DOLARES|ESTADO DE CUENTA EN DOLARES/.test(upper)) { currency = "USD"; paymentSection = false; continue; }
+    if (/MOVIMIENTOS EN QUETZALES|ESTADO DE CUENTA EN QUETZALES/.test(upper)) { currency = "GTQ"; paymentSection = false; continue; }
+    if (/PAGOS Y CREDITOS|PAGOS REALIZADOS/.test(upper)) { paymentSection = true; continue; }
+    if (/CREDIFACIL|EXTRAFINANCIAMIENTO|CARGOS DIFERIDOS/.test(upper)) paymentSection = false;
+    const opIso = normalizedDate(all[i]);
+    if (!opIso) continue;
+    let j = i + 1;
+    const secondIso = normalizedDate(all[j] ?? "");
+    if (secondIso) j++;
+    const rowTokens: string[] = [];
+    while (j < all.length && !normalizedDate(all[j]) && !/MOVIMIENTOS EN|ESTADO DE CUENTA EN|PAGOS Y CREDITOS/i.test(all[j])) rowTokens.push(all[j++]);
+    if (!rowTokens.length) continue;
+    const amountIndex = rowTokens.findIndex((value) => /^(?:Q\s*|GTQ\s*|US\$\s*|USD\s*)?-?[\d,]+\.\d{2}-?$/i.test(value) || /^(?:Q\s*|GTQ\s*|US\$\s*|USD\s*)?-?[\d,]+\.\d{2}\s*CR$/i.test(value));
+    if (amountIndex < 0) { i = j - 1; continue; }
+    const amountToken = rowTokens[amountIndex];
+    const amount = parseNumberToken(amountToken.replace(/(?:CR|-)$|\s+CR$/i, ""));
+    const descriptor = redactPiiFromText(rowTokens.slice(0, amountIndex).filter((v) => !/^\d{3,}$/.test(v)).join(" ")).trim();
+    if (!amount || !descriptor) { i = j - 1; continue; }
+    const installments = descriptor.match(/CUOTA\s*(\d{1,2})\s*(?:DE|\/)\s*(\d{1,2})/i);
+    const isExtraf = /CREDIFACIL|EXTRAFINANCIAMIENTO|CUOTA\s*\d+\s*(?:DE|\/)/i.test(descriptor);
+    const credit = /(?:CR\s*$|-\s*$)/i.test(amountToken) || /^CR$/i.test(rowTokens[amountIndex + 1] ?? "") || /^-/.test(amountToken) || /PAGO|ABONO/i.test(descriptor) || paymentSection;
+    const tx: RawExtractedPdfTransaction = { operationDate: all[i], consumptionDate: secondIso ? all[i + 1] : all[i], isoDate: secondIso ?? opIso, rawDescriptor: descriptor, amount, currency, kind: credit ? "payment" : isExtraf ? "extrafinanciamiento" : "regular", ...(installments ? { installmentCode: `${installments[1]}/${installments[2]}` } : {}) };
+    if (credit) output.paymentTransactions.push(tx);
+    else if (isExtraf) output.extrafinanciamientoTransactions.push(tx);
+    else (currency === "GTQ" ? output.regularTransactionsGtq : output.regularTransactionsUsd).push(tx);
+    i = j - 1;
+  }
+  output.isPdfParsed = output.regularTransactionsGtq.length + output.regularTransactionsUsd.length + output.extrafinanciamientoTransactions.length > 0;
+  output.rawPiiSample = "PII removida localmente";
+  output.redactedPiiSample = "PII removida localmente";
+  output.parseDurationMs = Number((performance.now() - start).toFixed(2));
+  return output;
 }
 
 const MONTH_NAMES_ES: Record<string, { full: string; short: string }> = {
@@ -100,10 +228,10 @@ function ddmmyyToIso(ddmmyy: string): string {
 }
 
 function parseNumberToken(raw: string): number {
-  const cleaned = raw.replace(/,/g, "").trim();
+  const cleaned = raw.replace(/,/g, "").replace(/^(?:Q|GTQ|US\$|USD)\s*/i, "").replace(/\s*(?:CR|-)$|\s+CR$/i, "").trim();
   if (!cleaned || cleaned === ".00") return 0;
   const num = parseFloat(cleaned);
-  return isNaN(num) ? 0 : num;
+  return isNaN(num) ? 0 : Math.abs(num);
 }
 
 /**
@@ -218,8 +346,12 @@ export function parsePdfStatementBuffer(
 ): ExtractedPdfStatementData {
   const startTime = performance.now();
   const tokens = extractTokensFromPdfBuffer(pdfBuffer);
+  const issuer = detectStatementIssuer(tokens, fileName);
+  if (issuer === "Banco G&T Continental") {
+    return parseGytContinentalTokens(tokens, fileName);
+  }
 
-  let bankName = "Banco Emisor";
+  let bankName = issuer === "Banco Industrial" ? "Banco Industrial" : "Banco Emisor (GT)";
   let cardBrand = "Visa Infinite";
   let cardMask = "4829";
   let cutoffDate = "17/09/2026";
@@ -408,7 +540,7 @@ export function parsePdfStatementBuffer(
             operationDate: opDate,
             consumptionDate: consumeDate,
             isoDate,
-            rawDescriptor,
+            rawDescriptor: redactPiiFromText(rawDescriptor),
             amount,
             currency: currencySection,
             kind: majorSection === "OTROS_CREDITOS" ? "credit" : "payment",
@@ -421,7 +553,7 @@ export function parsePdfStatementBuffer(
             operationDate: opDate,
             consumptionDate: consumeDate,
             isoDate,
-            rawDescriptor,
+            rawDescriptor: redactPiiFromText(rawDescriptor),
             amount,
             currency: currencySection,
             kind: "extrafinanciamiento",
@@ -432,7 +564,7 @@ export function parsePdfStatementBuffer(
             operationDate: opDate,
             consumptionDate: consumeDate,
             isoDate,
-            rawDescriptor,
+            rawDescriptor: redactPiiFromText(rawDescriptor),
             amount,
             currency: currencySection,
             kind: "regular",
@@ -470,12 +602,8 @@ export function parsePdfStatementBuffer(
   const cardAlias = `${bankName} · ${cardBrand} •••• ${cardMask}`;
   const statementPeriod = `Corte ${cutoffDate} · Pago ${paymentDueDate}`;
 
-  const rawPiiSample = `Titular: ${
-    holderNameDetected || "TITULAR DETECTADO EN PDF"
-  } | Tarjeta: XXXX XXXX XXXX ${cardMask} (${cardBrand}) | Dirección: ${
-    addressDetected || "DOMICILIO EN PDF"
-  }`;
-  const redactedPiiSample = `Titular: [TITULAR-ANONIMIZADO] | Tarjeta: [TARJETA-****-${cardMask}] (${cardBrand}) | Dirección: [DOMICILIO-REDACTADO-LOCALMENTE]`;
+  const rawPiiSample = "PII removida localmente antes del análisis";
+  const redactedPiiSample = "Titular, tarjeta e información de contacto redactados localmente";
 
   const parseDurationMs = Number((performance.now() - startTime).toFixed(2));
 
