@@ -35,8 +35,9 @@ import {
   analyzeStatements,
   formatNativeCurrency,
   GTQ_PER_USD,
+  reconcileStatement,
 } from "@/lib/statementAnalyzer";
-import { DEMO_STATEMENTS } from "@/lib/demoStatements";
+import { DEMO_STATEMENTS, GYT_DEMO_STATEMENTS } from "@/lib/demoStatements";
 
 type DashboardTab = "graficas" | "tendencias" | "decisiones" | "movimientos";
 type CurrencyFilter = "all" | "GTQ" | "USD" | "cuotas";
@@ -60,6 +61,7 @@ export default function CardStatementDashboard() {
     DEMO_STATEMENTS[2],
   ]);
   const [hasLoadedAny, setHasLoadedAny] = useState<boolean>(false);
+  const [demoIssuer, setDemoIssuer] = useState<"bi" | "gyt">("bi");
 
   const [enabledDecisionIds, setEnabledDecisionIds] = useState<
     Record<string, boolean>
@@ -90,22 +92,23 @@ export default function CardStatementDashboard() {
     () => analyzeStatements(activeStatements),
     [activeStatements]
   );
+  const latestDiagnostics = useMemo(
+    () => reconcileStatement(report.latestStatement),
+    [report.latestStatement]
+  );
 
-  const loadPresetAndOpenDashboard = async (count: 1 | 3) => {
+  const loadPresetAndOpenDashboard = async (count: 1 | 3, issuer: "bi" | "gyt" = "bi") => {
     setUploadError(null);
     setAnalyzingCount(count);
     setIsAnalyzing(true);
 
     await new Promise((resolve) => setTimeout(resolve, 450));
 
+    const preset = issuer === "gyt" ? GYT_DEMO_STATEMENTS : DEMO_STATEMENTS;
     if (count === 1) {
-      setActiveStatements([DEMO_STATEMENTS[2]]);
+      setActiveStatements([preset[2]]);
     } else {
-      setActiveStatements([
-        DEMO_STATEMENTS[0],
-        DEMO_STATEMENTS[1],
-        DEMO_STATEMENTS[2],
-      ]);
+      setActiveStatements(preset);
     }
     setHasLoadedAny(true);
     setIsAnalyzing(false);
@@ -519,18 +522,25 @@ export default function CardStatementDashboard() {
             </div>
           )}
 
-          {/* 2 Small Demo Buttons */}
+          {/* Demo preset selector */}
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
+              Demo:
+              <select value={demoIssuer} onChange={(e) => setDemoIssuer(e.target.value as "bi" | "gyt")} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700">
+                <option value="bi">Banco Industrial (actual)</option>
+                <option value="gyt">Banco G&amp;T Continental (3 meses GTQ/USD)</option>
+              </select>
+            </label>
             <button
               type="button"
-              onClick={() => loadPresetAndOpenDashboard(1)}
+              onClick={() => loadPresetAndOpenDashboard(1, demoIssuer)}
               className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
             >
               Ver ejemplo de 1 mes
             </button>
             <button
               type="button"
-              onClick={() => loadPresetAndOpenDashboard(3)}
+              onClick={() => loadPresetAndOpenDashboard(3, demoIssuer)}
               className="rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition cursor-pointer"
             >
               Ver ejemplo de 3 meses
@@ -735,6 +745,26 @@ export default function CardStatementDashboard() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        <section className="mb-5 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-2xs">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                {report.activeStatements.map((statement) => (
+                  <span key={statement.id} className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-800">
+                    {statement.cardAlias.split(" · ")[0]} · {statement.shortMonth} · {statement.cardAlias.match(/(\d{4})\s*$/)?.[1] ?? "••••"}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-slate-600">
+                Saldo: {latestDiagnostics.currencies.GTQ.reconciles === null ? "GTQ sin resumen" : latestDiagnostics.currencies.GTQ.reconciles ? "GTQ conciliado" : "diferencia en GTQ"} · {latestDiagnostics.currencies.USD.reconciles === null ? "USD sin resumen" : latestDiagnostics.currencies.USD.reconciles ? "USD conciliado" : "diferencia en USD"} · Filas GTQ: {latestDiagnostics.currencies.GTQ.transactionsDifference === null ? "sin resumen" : Math.abs(latestDiagnostics.currencies.GTQ.transactionsDifference) <= 0.05 ? "coinciden" : "difieren"} · USD: {latestDiagnostics.currencies.USD.transactionsDifference === null ? "sin resumen" : Math.abs(latestDiagnostics.currencies.USD.transactionsDifference) <= 0.05 ? "coinciden" : "difieren"}
+              </p>
+            </div>
+            <div className="text-right text-xs text-slate-600">
+              <div><strong>{latestDiagnostics.installmentCount}</strong> cuotas CrediFácil / extrafinanciamiento · <strong>{formatNativeCurrency(latestDiagnostics.monthlyInstallmentGTQ, "GTQ")}</strong> + <strong>{formatNativeCurrency(latestDiagnostics.monthlyInstallmentUSD, "USD")}</strong> fijo mensual</div>
+              <div>{((latestDiagnostics.monthlyInstallmentGTQ / Math.max(1, report.bimonetaryKpis.regularConsolidatedGTQ + latestDiagnostics.monthlyInstallmentGTQ)) * 100).toFixed(0)}% de compras y cuotas corresponde a cuotas fijas · filas GTQ vs resumen {latestDiagnostics.currencies.GTQ.transactionsDifference === null ? "—" : formatNativeCurrency(Math.abs(latestDiagnostics.currencies.GTQ.transactionsDifference), "GTQ")} · cuotas {latestDiagnostics.currencies.GTQ.installmentsDifference === null ? "—" : formatNativeCurrency(Math.abs(latestDiagnostics.currencies.GTQ.installmentsDifference), "GTQ")} · Duplicados: {latestDiagnostics.duplicateCharges.length} · cargos financieros: {latestDiagnostics.feeLeakage.length}</div>
+            </div>
+          </div>
+        </section>
         {/* ====================================================================
             TAB 1: RESUMEN Y GRÁFICAS (3 KPIs + 3 LARGE VISUAL CHARTS)
            ==================================================================== */}

@@ -2,6 +2,8 @@
 
 Analizador visual de estados de cuenta de tarjetas de crédito bimonetarios (`GTQ Q` y `USD $`) en PDF. Permite arrastrar uno o varios estados de cuenta para visualizar el gasto por categoría, comparar tendencias multi-mes, simular decisiones de ahorro y filtrar movimientos.
 
+El parser detecta **Banco Industrial** y **Banco G&T Continental**, procesa movimientos en GTQ y USD y etiqueta cuotas CrediFácil / extrafinanciamientos. La aplicación compara los movimientos con el resumen del corte, estima compromisos mensuales de cuotas y señala posibles duplicados y cargos financieros. La redacción de PII se realiza localmente antes de cualquier enriquecimiento con IA.
+
 - **Demo en Vivo:** [https://card-statement-insights.vercel.app](https://card-statement-insights.vercel.app)
 - **Índice de Prototipos:** [`ykro/ilab-aibuilders-prototypes`](https://github.com/ykro/ilab-aibuilders-prototypes)
 
@@ -33,3 +35,5 @@ Analizador visual de estados de cuenta de tarjetas de crédito bimonetarios (`GT
 npm install
 npm run dev
 ```
+
+Ejecuta `npm test` para correr las pruebas deterministas del parser, redacción de PII y conciliación.

@@ -1,7 +1,5 @@
-import {
-  ExtractedPdfStatementData,
-  parsePdfStatementBuffer,
-} from "./pdf-statement-parser";
+import { parsePdfStatementBuffer } from "./pdf-statement-parser";
+import type { ExtractedPdfStatementData } from "./pdf-statement-parser";
 
 export type CurrencyCode = "GTQ" | "USD";
 
@@ -49,9 +47,12 @@ export interface CardStatement {
   rawPiiSample?: string;
   redactedPiiSample?: string;
   bimonetaryMeta?: {
+    previousBalanceGtq?: number;
+    previousBalanceUsd?: number;
     purchasesGtq: number;
     purchasesUsd: number;
     extrafinanciamientoGtq: number;
+    extrafinanciamientoUsd?: number;
     paymentsGtq: number;
     paymentsUsd: number;
     closingBalanceGtq: number;
@@ -60,6 +61,62 @@ export interface CardStatement {
     creditLimitUsd: number;
   };
   transactions: StatementTransaction[];
+}
+
+export interface ReconciliationDiagnostics {
+  currencies: Record<CurrencyCode, { balanceDifference: number | null; transactionsDifference: number | null; installmentsDifference: number | null; reconciles: boolean | null }>;
+  installmentCount: number;
+  monthlyInstallmentGTQ: number;
+  monthlyInstallmentUSD: number;
+  estimatedRemainingGTQ: number;
+  estimatedRemainingUSD: number;
+  duplicateCharges: string[];
+  feeLeakage: string[];
+}
+
+export function reconcileStatement(statement: CardStatement): ReconciliationDiagnostics {
+  const meta = statement.bimonetaryMeta;
+  const transactionsFor = (currency: CurrencyCode) => statement.transactions.filter((tx) => tx.originalCurrency === currency && !tx.isExtrafinanciamiento && !/PAGO|ABONO/i.test(tx.rawDescriptor));
+  const buildCurrency = (currency: CurrencyCode) => {
+    const usd = currency === "USD";
+    const previous = usd ? meta?.previousBalanceUsd : meta?.previousBalanceGtq;
+    const purchases = usd ? meta?.purchasesUsd : meta?.purchasesGtq;
+    const installments = usd ? meta?.extrafinanciamientoUsd : meta?.extrafinanciamientoGtq;
+    const payments = usd ? meta?.paymentsUsd : meta?.paymentsGtq;
+    const closing = usd ? meta?.closingBalanceUsd : meta?.closingBalanceGtq;
+    const balanceDifference = [previous, purchases, installments, payments, closing].every((v) => v !== undefined)
+      ? Number((previous! + purchases! + installments! - payments! - closing!).toFixed(2)) : null;
+    const rowSum = transactionsFor(currency).reduce((sum, tx) => sum + (tx.originalAmount ?? (usd ? tx.amountGTQ / GTQ_PER_USD : tx.amountGTQ)), 0);
+    const transactionsDifference = purchases === undefined ? null : Number((rowSum - purchases).toFixed(2));
+    const installmentRows = statement.transactions.filter((tx) => tx.isExtrafinanciamiento && tx.originalCurrency === currency);
+    const installmentSum = installmentRows.reduce((sum, tx) => sum + (tx.originalAmount ?? (usd ? tx.amountGTQ / GTQ_PER_USD : tx.amountGTQ)), 0);
+    const installmentSummary = usd ? meta?.extrafinanciamientoUsd : meta?.extrafinanciamientoGtq;
+    const installmentsDifference = installmentSummary === undefined ? null : Number((installmentSum - installmentSummary).toFixed(2));
+    return { balanceDifference, transactionsDifference, installmentsDifference, reconciles: balanceDifference === null ? null : Math.abs(balanceDifference) <= 0.05 };
+  };
+  const installments = statement.transactions.filter((tx) => tx.isExtrafinanciamiento);
+  const remaining = (tx: StatementTransaction) => {
+    const current = tx.installmentInfo?.currentInstallment;
+    const total = tx.installmentInfo?.totalInstallments;
+    return current && total ? Math.max(0, total - current) * (tx.originalAmount ?? tx.amountGTQ) : 0;
+  };
+  const duplicateCharges: string[] = [];
+  const regular = statement.transactions.filter((tx) => !tx.isExtrafinanciamiento);
+  for (let i = 0; i < regular.length; i++) for (let j = i + 1; j < regular.length; j++) {
+    const a = regular[i], b = regular[j];
+    const days = Math.abs(Date.parse(a.date) - Date.parse(b.date)) / 86400000;
+    if (a.normalizedMerchant.toLowerCase() === b.normalizedMerchant.toLowerCase() && a.originalAmount === b.originalAmount && days <= 1) duplicateCharges.push(`${a.normalizedMerchant}: ${a.date} / ${b.date}`);
+  }
+  const feeLeakage = regular.filter((tx) => /INTERESES FINANCIAMIENTO|MORA|MEMBRESIA|SEGURO PROTECCION|COMISION/i.test(tx.rawDescriptor)).map((tx) => tx.rawDescriptor);
+  return {
+    currencies: { GTQ: buildCurrency("GTQ"), USD: buildCurrency("USD") },
+    installmentCount: installments.length,
+    monthlyInstallmentGTQ: installments.filter((tx) => tx.originalCurrency !== "USD").reduce((sum, tx) => sum + (tx.originalAmount ?? tx.amountGTQ), 0),
+    monthlyInstallmentUSD: installments.filter((tx) => tx.originalCurrency === "USD").reduce((sum, tx) => sum + (tx.originalAmount ?? 0), 0),
+    estimatedRemainingGTQ: installments.filter((tx) => tx.originalCurrency !== "USD").reduce((sum, tx) => sum + remaining(tx), 0),
+    estimatedRemainingUSD: installments.filter((tx) => tx.originalCurrency === "USD").reduce((sum, tx) => sum + remaining(tx), 0),
+    duplicateCharges, feeLeakage,
+  };
 }
 
 export interface CategorySummary {
@@ -692,6 +749,7 @@ export function convertExtractedPdfToCardStatement(
 
   extracted.extrafinanciamientoTransactions.forEach((tx, idx) => {
     const norm = normalizeDirtyMerchantName(tx.rawDescriptor);
+    const cuota = tx.installmentCode?.match(/(\d+)\/(\d+)/);
     transactions.push({
       id: `pdf-extraf-${indexOffset}-${idx}`,
       date: tx.isoDate,
@@ -708,8 +766,8 @@ export function convertExtractedPdfToCardStatement(
       isAntExpense: false,
       isExtrafinanciamiento: true,
       installmentInfo: {
-        currentInstallment: 1,
-        totalInstallments: 12,
+        currentInstallment: cuota ? Number(cuota[1]) : 1,
+        totalInstallments: cuota ? Number(cuota[2]) : 12,
         code: tx.rawDescriptor,
       },
     });
@@ -727,9 +785,12 @@ export function convertExtractedPdfToCardStatement(
     rawPiiSample: extracted.rawPiiSample,
     redactedPiiSample: extracted.redactedPiiSample,
     bimonetaryMeta: {
+      previousBalanceGtq: extracted.summary.previousBalanceGtq,
+      previousBalanceUsd: extracted.summary.previousBalanceUsd,
       purchasesGtq: extracted.summary.purchasesGtq,
       purchasesUsd: extracted.summary.purchasesUsd,
       extrafinanciamientoGtq: extracted.summary.extrafinanciamientoGtq,
+      extrafinanciamientoUsd: extracted.summary.extrafinanciamientoUsd,
       paymentsGtq: extracted.summary.paymentsGtq,
       paymentsUsd: extracted.summary.paymentsUsd,
       closingBalanceGtq: extracted.summary.closingBalanceGtq,

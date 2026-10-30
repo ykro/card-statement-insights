@@ -12,6 +12,7 @@ import {
 import {
   extractTokensFromPdfBuffer,
   parsePdfStatementBuffer,
+  redactPiiFromText,
 } from "@/lib/pdf-statement-parser";
 
 interface UploadedFileInput {
@@ -92,7 +93,7 @@ async function callGeminiWithCompactText(
                 parts: [
                   { text: COMPACT_TEXT_EXTRACTION_PROMPT },
                   {
-                    text: `Archivo (${fileName}):\n${compactText.slice(0, 24000)}`,
+                    text: `Archivo (${redactPiiFromText(fileName)}):\n${compactText.slice(0, 24000)}`,
                   },
                 ],
               },
@@ -123,13 +124,13 @@ async function callGeminiWithCompactText(
 
       const transactions: StatementTransaction[] = parsed.transactions
         .map((tx: Record<string, unknown>, idx: number) => {
-          const rawDesc = String(
+          const rawDesc = redactPiiFromText(String(
             tx.rawDescriptor || tx.normalizedMerchant || "Consumo Tarjeta"
-          );
+          ));
           const normInfo = normalizeDirtyMerchantName(rawDesc);
-          const cleanMerchant = String(
+          const cleanMerchant = redactPiiFromText(String(
             tx.normalizedMerchant || normInfo.normalizedMerchant
-          );
+          ));
           const origCurr: CurrencyCode =
             String(tx.originalCurrency || "GTQ").toUpperCase() === "USD"
               ? "USD"
@@ -236,7 +237,7 @@ export async function POST(req: NextRequest) {
         } else if (apiKey) {
           // If PDF has text tokens in a different bank format, pass compact text tokens (~3 KB) to Gemini
           const tokens = extractTokensFromPdfBuffer(rawBuffer);
-          const compactText = tokens.map((t) => t.text).join(" | ");
+          const compactText = redactPiiFromText(tokens.map((t) => t.text).join(" | "));
           if (compactText.length > 40) {
             extracted = await callGeminiWithCompactText(
               compactText,
@@ -248,7 +249,7 @@ export async function POST(req: NextRequest) {
         }
       } else if (apiKey) {
         // Plain text or CSV with optional Gemini enrichment
-        const decodedText = rawBuffer.toString("utf-8");
+        const decodedText = redactPiiFromText(rawBuffer.toString("utf-8"));
         extracted = await callGeminiWithCompactText(
           decodedText,
           file.name,
@@ -259,7 +260,7 @@ export async function POST(req: NextRequest) {
 
       // 2. Deterministic fallback for CSV / TXT / PDF buffer
       if (!extracted) {
-        const rawText = rawBuffer.toString("utf-8");
+        const rawText = redactPiiFromText(rawBuffer.toString("utf-8"));
         extracted = parseUploadedStatementText(
           rawText,
           file.name,

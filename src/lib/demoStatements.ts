@@ -1,4 +1,4 @@
-import { CardStatement } from "./statementAnalyzer";
+import type { CardStatement } from "./statementAnalyzer";
 
 export const DEMO_STATEMENTS: CardStatement[] = [
   {
@@ -10,8 +10,7 @@ export const DEMO_STATEMENTS: CardStatement[] = [
     statementPeriod: "Corte 17/07/2026 · Pago 11/08/2026",
     cutoffDate: "17/07/2026",
     paymentDueDate: "11/08/2026",
-    rawPiiSample:
-      "Titular: Alejandro Morales | Tarjeta: XXXX XXXX XXXX 4829 (Visa Infinite) | Dirección: Av. Las Américas Zona 14, Ciudad",
+    rawPiiSample: "PII removida localmente",
     redactedPiiSample:
       "Titular: [TITULAR-ANONIMIZADO] | Tarjeta: [TARJETA-****-4829] (Visa Infinite) | Dirección: [DOMICILIO-REDACTADO-LOCALMENTE]",
     bimonetaryMeta: {
@@ -297,8 +296,7 @@ export const DEMO_STATEMENTS: CardStatement[] = [
     statementPeriod: "Corte 17/08/2026 · Pago 11/09/2026",
     cutoffDate: "17/08/2026",
     paymentDueDate: "11/09/2026",
-    rawPiiSample:
-      "Titular: Alejandro Morales | Tarjeta: XXXX XXXX XXXX 4829 (Visa Infinite) | Dirección: Av. Las Américas Zona 14, Ciudad",
+    rawPiiSample: "PII removida localmente",
     redactedPiiSample:
       "Titular: [TITULAR-ANONIMIZADO] | Tarjeta: [TARJETA-****-4829] (Visa Infinite) | Dirección: [DOMICILIO-REDACTADO-LOCALMENTE]",
     bimonetaryMeta: {
@@ -584,8 +582,7 @@ export const DEMO_STATEMENTS: CardStatement[] = [
     statementPeriod: "Corte 17/09/2026 · Pago 11/10/2026",
     cutoffDate: "17/09/2026",
     paymentDueDate: "11/10/2026",
-    rawPiiSample:
-      "Titular: Alejandro Morales | Tarjeta: XXXX XXXX XXXX 4829 (Visa Infinite) | Dirección: Av. Las Américas Zona 14, Ciudad",
+    rawPiiSample: "PII removida localmente",
     redactedPiiSample:
       "Titular: [TITULAR-ANONIMIZADO] | Tarjeta: [TARJETA-****-4829] (Visa Infinite) | Dirección: [DOMICILIO-REDACTADO-LOCALMENTE]",
     bimonetaryMeta: {
@@ -1065,3 +1062,51 @@ export const DEMO_STATEMENTS: CardStatement[] = [
     ],
   },
 ];
+
+export const GYT_DEMO_STATEMENTS: CardStatement[] = DEMO_STATEMENTS.map((source) => {
+  const statement: CardStatement = {
+    ...source,
+    id: source.id.replace("stmt-", "stmt-gyt-"),
+    cardAlias: "Banco G&T Continental · Visa G&T Continental - *4821",
+    bimonetaryMeta: { ...source.bimonetaryMeta! },
+    transactions: source.transactions.map((tx) => ({ ...tx, id: `gyt-${tx.id}` })),
+  };
+  const month = statement.shortMonth.toLowerCase();
+  const installments = [
+    { merchant: "Distelsa", amount: 450, current: 2 },
+    { merchant: "MAX Distelsa", amount: 525, current: 3 },
+    { merchant: "MAX Distelsa", amount: 525, current: 4 },
+  ][DEMO_STATEMENTS.indexOf(source)];
+  statement.transactions.push({
+    id: `gyt-${month}-credifacil`, date: `${source.monthKey}-12`,
+    rawDescriptor: `CREDIFACIL MAX DISTELSA CUOTA ${String(installments.current).padStart(2, "0")} DE 12`,
+    normalizedMerchant: installments.merchant, category: "Extrafinanciamiento y Cuotas",
+    originalCurrency: "GTQ", originalAmount: installments.amount, amountGTQ: installments.amount,
+    isRecurring: true, isExtrafinanciamiento: true,
+    installmentInfo: { currentInstallment: installments.current, totalInstallments: 12, code: `CUOTA ${installments.current}/12` },
+  }, {
+    id: `gyt-${month}-netflix`, date: `${source.monthKey}-16`, rawDescriptor: "NETFLIX.COM", normalizedMerchant: "Netflix",
+    category: "Suscripciones y Servicios", originalCurrency: "USD", originalAmount: 15.99, amountGTQ: 123.92, isRecurring: true,
+  }, {
+    id: `gyt-${month}-spotify`, date: `${source.monthKey}-20`, rawDescriptor: "SPOTIFY USA", normalizedMerchant: "Spotify",
+    category: "Suscripciones y Servicios", originalCurrency: "USD", originalAmount: 10.99, amountGTQ: 85.17, isRecurring: true,
+  }, {
+    id: `gyt-${month}-local`, date: `${source.monthKey}-18`, rawDescriptor: "CAFE BARISTA ZONA 10", normalizedMerchant: "Café Barista",
+    category: "Gastos Hormiga y Cafés", originalCurrency: "GTQ", originalAmount: 68, amountGTQ: 68,
+  });
+  if (statement.bimonetaryMeta) {
+    const sourceIndex = DEMO_STATEMENTS.indexOf(source);
+    statement.bimonetaryMeta.previousBalanceGtq = sourceIndex > 0
+      ? DEMO_STATEMENTS[sourceIndex - 1].bimonetaryMeta?.closingBalanceGtq ?? 0
+      : source.bimonetaryMeta?.paymentsGtq ?? 0;
+    statement.bimonetaryMeta.previousBalanceUsd = sourceIndex > 0
+      ? DEMO_STATEMENTS[sourceIndex - 1].bimonetaryMeta?.closingBalanceUsd ?? 0
+      : source.bimonetaryMeta?.paymentsUsd ?? 0;
+    statement.bimonetaryMeta.purchasesGtq += 68;
+    statement.bimonetaryMeta.purchasesUsd += 15.99 + 10.99;
+    statement.bimonetaryMeta.extrafinanciamientoGtq += installments.amount;
+    statement.bimonetaryMeta.closingBalanceGtq += 68 + installments.amount;
+    statement.bimonetaryMeta.closingBalanceUsd += 15.99 + 10.99;
+  }
+  return statement;
+});

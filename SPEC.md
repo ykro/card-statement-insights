@@ -1,5 +1,11 @@
 # Especificación del Proyecto: Card Statement Insights (Bimonetary 1-to-3+ Statements Analyzer)
 
+## Emisores soportados y control de cuotas
+
+El parser detecta y procesa estados de cuenta de **Banco Industrial** y **Banco G&T Continental** con resumen y movimientos GTQ/USD. G&T incluye seguimiento de cuotas CrediFácil y extrafinanciamientos, conciliación de saldo por moneda, comparación de transacciones contra resumen, detección de cargos posiblemente duplicados y cargos financieros. Los datos de G&T también están disponibles como demo de tres meses desde la pantalla de carga.
+
+Las pruebas deterministas se ejecutan con `npm test`; deben cubrir detección de emisor, extracción dual de moneda, cuotas y pagos, redacción local de PII y cálculos de conciliación.
+
 **Objetivo:** Construir un analizador ejecutivo de estados de cuenta de tarjetas de crédito bimonetarios (`GTQ Q` y `USD $`) que **separe la pantalla de carga de la pantalla de resultados**, **funcione en menos de 50 ms desde el primer estado de cuenta PDF**, y **desbloquee la detección de tendencias multi-mes al cargar 3 o más cortes**.
 
 - **Índice General de Prototipos:** [`ykro/ilab-aibuilders-prototypes`](https://github.com/ykro/ilab-aibuilders-prototypes)
